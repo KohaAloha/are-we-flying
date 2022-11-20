@@ -12,7 +12,7 @@ Oh, no, I totally checked that in too. It's in the `website` dir. No need to `np
 
 ### ... and a... `run.bat`? Really?
 
-Yeah, shocker, the majority of the world is on Windows, despite it still being the year of Linux on the desktop. Who knew?
+Yeah, shocker, the majority of the world is on Windows, despite it still being the year of Linux on the desktop. And "every dev uses a macbook". Who knew?
 
 ### Okay look we need to talk
 
