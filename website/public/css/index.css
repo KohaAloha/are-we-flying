@@ -40,6 +40,15 @@ formfield {
     rotate(calc(1deg * var(--deg)));
 }
 
+.map-pin .paused img.pin {
+  animation: 1s linear 1s infinite alternate pulsing;
+}
+
+@keyframes pulsing {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
 input#title {
   border: none;
   font-size: 1rem;

@@ -4,8 +4,8 @@ import { Duncan } from "./locations.js";
 import { Plane } from "./plane.js";
 import { Questions } from "./questions.js";
 
+globalThis.queryMSFS = getAPI;
 const L = await waitFor(async () => window.L);
-
 const map = L.map("map").setView(Duncan, 15);
 
 const openStreetMap = L.tileLayer(

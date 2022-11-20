@@ -68,14 +68,38 @@ class SimConnection():
         with open('simvars.txt') as file:
             lines = file.readlines()
             self.sim_vars = [s.strip() for s in lines]
+        self.sim_events = []
+        self.sim_running = 0
+        self.reset_position = False
+
+    def handle_id_event(self, eventId):
+        # print(eventId);
+        self.sim_events.append(eventId)
+        self.sim_running = eventId
+        sequence = self.sim_events[-3:]
+        if sequence == [1,0,3]:
+            self.reset_position = True
+            # print("reset position...")
+
+    def handle_simobject_event(self, event):
+        # print(event)
+        pass
+
+    def handle_exception_event(self, exception, definition):
+        # print(exception, definition)
+        pass
 
     def connect(self):
         print("Connecting to simulator...")
         try:
             self.sm = SimConnect()
+            self.sm.add_event_listener(self)
             self.connected = True
             self.aq = AircraftRequests(self.sm, _time=200)
             self.sim_vars = []
+            camera = self.get_property_value("CAMERA_STATE")
+            if camera is not None and camera <= 6:
+                self.sim_running = 3
 
         except ConnectionError:
             seconds = 5.0
@@ -92,15 +116,35 @@ class SimConnection():
         return name
 
     def get_property_value(self, name):
+        # Special property for determining whether the user's playing the sim or not
+        if name == "SIM_RUNNING":
+            camera = self.get_property_value("CAMERA_STATE")
+            return self.sim_running == 3 and camera is not None and camera <= 6
+
+        # Special property for determining whether the user's paused on the menu
+        if name == "SIM_PAUSED":
+            return self.sim_running == 2
+
+        # Special property for determining whether the flight got reset. This value
+        # gets wiped once requests, so you only get that signal once per reset.
+        if name == "FLIGHT_RESET":
+            if self.reset_position == True:
+                self.reset_position = False
+                return True
+            else:
+                return False
+
         try:
             value = self.aq.get(name)
         except OSError:
             self.disconnect()
             return None
+
         try:
             value = value.decode("utf-8")
         except:
             pass
+
         return value
 
     def get_property_values(self, *args):

@@ -4,10 +4,15 @@ import { waitFor } from "./wait-for.js";
 import { Monitor } from "./monitor.js";
 import { Duncan } from "./locations.js";
 import { Gyro } from "./gyroscope.js";
+import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 
 let L; // leaflet
-const { sqrt } = Math;
+const { sqrt, max } = Math;
+let planeIcon;
+let paused = false;
+
+const SIM_PROPS = ["SIM_RUNNING", "SIM_PAUSED", "FLIGHT_RESET"];
 
 const MODEL_PROPS = ["TITLE", "STATIC_CG_TO_GROUND"];
 
@@ -36,35 +41,16 @@ const FLIGHT_PROPS = [
   "CRASH_SEQUENCE",
 ];
 
-globalThis.trails = [];
-
-class Trail {
-  constructor(map, pair) {
-    this.map = map;
-    this.line = undefined;
-    this.coords = [];
-    this.addLatLng(pair);
-  }
-  addLatLng(pair) {
-    this.coords.push(pair);
-    if (this.coords.length === 2) {
-      this.line = L.polyline([...this.coords]);
-      this.line.addTo(this.map);
-      globalThis.trails.push(this);
-    }
-    this.line?.addLatLng(pair);
-  }
-}
-
 export class Plane {
   constructor(map, location, heading) {
-    this.monitor = new Monitor((data) => this.update(data));
     this.init(map, location, heading);
+    this.monitor = new Monitor((data) => this.update(data));
+    this.monitor.registerAll(SIM_PROPS, 1000);
     waitFor(() => getAPI(`http://localhost:8080/loaded-in`)).then(() => {
       Questions.inGame(true);
       this.waitForModel();
     });
-    const [lat, long] = Duncan;
+    const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
   }
@@ -78,6 +64,8 @@ export class Plane {
   async addPlaneIconToMap(map, location = Duncan, heading = 0) {
     L = await waitFor(async () => window.L);
     const props = {
+      autoPan: false,
+      autoPanOnFocus: false,
       icon: L.divIcon({
         iconSize: [73 / 2, 50 / 2],
         iconAnchor: [73 / 4, 50 / 4],
@@ -88,6 +76,7 @@ export class Plane {
     };
     this.map = map;
     this.marker = L.marker(location, props).addTo(map);
+    planeIcon = document.querySelector(`#plane-icon`);
     this.startNewTrail(location);
   }
 
@@ -106,12 +95,42 @@ export class Plane {
   }
 
   async setState(data) {
+    if (data.FLIGHT_RESET === true) {
+      this.startNewTrail();
+    }
+
+    if (data.SIM_RUNNING !== undefined) {
+      paused =
+        data.SIM_RUNNING === false || (data.SIM_RUNNING && data.SIM_PAUSED);
+      planeIcon.classList[paused ? `add` : `remove`](`paused`);
+    }
+
     if (data.TITLE === undefined) return;
 
     this.state = {
       title: data.TITLE,
       cg: data.STATIC_CG_TO_GROUND,
     };
+
+    let pic = `plane.png`;
+    let plane = this.state.title.toLowerCase();
+    console.log(plane);
+    if (plane.includes(`rudder`)) pic = `top rudder.png`;
+    else if (plane.includes(`bonanza`)) pic = `bonanza.png`;
+    else if (plane.includes(`vertigo`)) pic = `vertigo.png`;
+    else if (plane.includes(`d18`)) pic = `beechcraft.png`;
+    else if (plane.includes(`beaver`)) pic = `beaver.png`;
+    else if (plane.includes(`carbon`)) pic = `carbon.png`;
+    else if (plane.includes(` 310`)) pic = `310.png`;
+    else if (plane.includes(`mb-339`)) pic = `mb-339.png`;
+    else if (plane.includes(`searey`)) pic = `searey.png`;
+    else if (plane.includes(`kodiak`)) pic = `kodiak.png`;
+    else if (plane.includes(`amphibian`) || plane.includes(`float`)) {
+      pic = pic.replace(`.png`, `-float.png`);
+    }
+    [...planeIcon.querySelectorAll(`img`)].forEach(
+      (img) => (img.src = `planes/${pic}`)
+    );
 
     Questions.modelLoaded(this.state.title);
     this.monitor.muteAll(...MODEL_PROPS);
@@ -183,6 +202,8 @@ export class Plane {
   }
 
   async updateViz(data) {
+    if (paused) return;
+
     this.setVector(data);
     this.setOrientation(data);
     this.setCrashData(data);
@@ -192,44 +213,31 @@ export class Plane {
     }
 
     const { alt, galt, palt, speed, lat, long } = this.vector;
+
     if (lat === undefined || long === undefined) return;
 
-    if (dist(this.lat, this.long, lat, long) > 0.001) {
+    if (dist(this.lat, this.long, lat, long) > 0.02) {
       this.startNewTrail([lat, long]);
     }
 
-    this.lat = lat;
-    this.long = long;
-
-    this.map.setView([lat, long]);
-    this.marker.setLatLng(new L.LatLng(lat, long));
-    this.trail.addLatLng([lat, long]);
-
-    // TODO: this only needs to run on sim-load
-    let pic = `plane.png`;
-    let plane = this.state.title.toLowerCase();
-    if (plane.includes(`rudder`)) pic = `top rudder.png`;
-    if (plane.includes(`vertigo`)) pic = `vertigo.png`;
-    if (plane.includes(`d18`)) pic = `beechcraft.png`;
-    if (plane.includes(`beaver`)) pic = `beaver.png`;
-    if (plane.includes(`carbon`)) pic = `carbon.png`;
-    if (plane.includes(` 310`)) pic = `310.png`;
-    if (plane.includes(`kodiak`)) pic = `kodiak.png`;
-    if (plane.includes(`amphibian`) || plane.includes(`float`)) {
-      pic = pic.replace(`.png`, `-float.png`);
+    try {
+      this.map.setView([lat, long]);
+      this.marker.setLatLng([lat, long]);
+      this.trail.addLatLng([lat, long]);
+      this.lat = lat;
+      this.long = long;
+    } catch (e) {
+      console.log(`what is triggering this error?`, e);
     }
 
-    const { airBorn, bank, pitch, heading } = this.orientation;
-    const st = document.querySelector(`#plane-icon`);
-    st.style.setProperty(`--altitude`, `${sqrt(palt) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
-    st.style.setProperty(`--deg`, heading | 0);
-    st.querySelector(`.alt`).textContent = `${alt | 0}'`;
-    st.querySelector(`.alt.ground`).textContent = `${galt | 0}'`;
-    st.style.setProperty(`--speed`, speed | 0);
-    st.querySelector(`.speed`).textContent = `${speed | 0}kts`;
-    [...st.querySelectorAll(`img`)].forEach(
-      (img) => (img.src = `planes/${pic}`)
-    );
+    const { bank, pitch, heading } = this.orientation;
+    const st = planeIcon.style;
+    st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
+    st.setProperty(`--deg`, heading | 0);
+    st.setProperty(`--speed`, speed | 0);
+    planeIcon.querySelector(`.alt`).textContent = `${alt | 0}'`;
+    planeIcon.querySelector(`.alt.ground`).textContent = `${galt | 0}'`;
+    planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
   }
