@@ -8,7 +8,7 @@ Yep. No need to `pip install` for you.
 
 ### but you didn't check in a `node_modules`?
 
-Oh, no, I checked totally checked that in too. It's in the `website` dir. No need to `npm install` for you either.
+Oh, no, I totally checked that in too. It's in the `website` dir. No need to `npm install` for you either.
 
 ### ... and a... `run.bat`? Really?
 
