@@ -6,10 +6,10 @@ import { Duncan } from "./locations.js";
 import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
+import { getAirplaneSrc } from "./airplane-src.js";
 
 let L; // leaflet
-const { sqrt, max } = Math;
-let planeIcon;
+const { abs, sqrt, max } = Math;
 let paused = false;
 
 const SIM_PROPS = ["SIM_RUNNING", "SIM_PAUSED", "FLIGHT_RESET"];
@@ -30,6 +30,7 @@ const FLIGHT_PROPS = [
   "PLANE_LONGITUDE",
   "GROUND_VELOCITY",
   "PLANE_ALTITUDE",
+  "VERTICAL_SPEED",
   "PLANE_ALT_ABOVE_GROUND",
   "GROUND_ALTITUDE",
   "PLANE_BANK_DEGREES",
@@ -46,13 +47,11 @@ export class Plane {
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
     this.monitor.registerAll(SIM_PROPS, 1000);
-    waitFor(() => getAPI(`http://localhost:8080/loaded-in`)).then(() => {
-      Questions.inGame(true);
-      this.waitForModel();
-    });
+    this.waitForInGame();
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
+    this.running = false;
   }
 
   init(map, location, heading) {
@@ -76,7 +75,7 @@ export class Plane {
     };
     this.map = map;
     this.marker = L.marker(location, props).addTo(map);
-    planeIcon = document.querySelector(`#plane-icon`);
+    this.planeIcon = document.querySelector(`#plane-icon`);
     this.startNewTrail(location);
   }
 
@@ -85,26 +84,57 @@ export class Plane {
   }
 
   update(data) {
+    this.checkForReset(data);
+    this.checkForSimRunning(data);
+    if (!this.running) return;
     this.setState(data);
     this.setEngine(data);
     this.updateViz(data);
+  }
+
+  async waitForInGame() {
+    waitFor(() => getAPI(`http://localhost:8080/loaded-in`)).then(() => {
+      Questions.inGame(true);
+      this.waitForModel();
+    });
   }
 
   async waitForModel() {
     this.monitor.registerAll(MODEL_PROPS, 5000);
   }
 
-  async setState(data) {
-    if (data.FLIGHT_RESET === true) {
+
+  checkForReset(data) {
+    const { FLIGHT_RESET: reset } = data;
+    if (
+      reset !== undefined &&
+      reset !== false &&
+      reset !== this.lastReset &&
+      Date.now() - reset < 5000
+    ) {
+      this.lastReset = reset;
       this.startNewTrail();
     }
+  }
 
-    if (data.SIM_RUNNING !== undefined) {
-      paused =
-        data.SIM_RUNNING === false || (data.SIM_RUNNING && data.SIM_PAUSED);
-      planeIcon.classList[paused ? `add` : `remove`](`paused`);
+  checkForSimRunning(data) {
+    const { SIM_RUNNING: running } = data;
+    if (running === undefined) return;
+    this.running = running;
+    if (running === false) {
+      this.waitForInGame();
+      Questions.resetPlayer();
     }
+    if (running === true) {
+      paused = false;
+      if (data.SIM_PAUSED) {
+        paused = true;
+        this.planeIcon?.classList[paused ? `add` : `remove`](`paused`);
+      }
+    }
+  }
 
+  async setState(data) {
     if (data.TITLE === undefined) return;
 
     this.state = {
@@ -112,23 +142,8 @@ export class Plane {
       cg: data.STATIC_CG_TO_GROUND,
     };
 
-    let pic = `plane.png`;
-    let plane = this.state.title.toLowerCase();
-    console.log(plane);
-    if (plane.includes(`rudder`)) pic = `top rudder.png`;
-    else if (plane.includes(`bonanza`)) pic = `bonanza.png`;
-    else if (plane.includes(`vertigo`)) pic = `vertigo.png`;
-    else if (plane.includes(`d18`)) pic = `beechcraft.png`;
-    else if (plane.includes(`beaver`)) pic = `beaver.png`;
-    else if (plane.includes(`carbon`)) pic = `carbon.png`;
-    else if (plane.includes(` 310`)) pic = `310.png`;
-    else if (plane.includes(`mb-339`)) pic = `mb-339.png`;
-    else if (plane.includes(`searey`)) pic = `searey.png`;
-    else if (plane.includes(`kodiak`)) pic = `kodiak.png`;
-    else if (plane.includes(`amphibian`) || plane.includes(`float`)) {
-      pic = pic.replace(`.png`, `-float.png`);
-    }
-    [...planeIcon.querySelectorAll(`img`)].forEach(
+    const pic = getAirplaneSrc(this.state.title);
+    [...this.planeIcon.querySelectorAll(`img`)].forEach(
       (img) => (img.src = `planes/${pic}`)
     );
 
@@ -171,6 +186,7 @@ export class Plane {
       lat: data.PLANE_LATITUDE,
       long: data.PLANE_LONGITUDE,
       speed: data.GROUND_VELOCITY,
+      vspeed: data.VERTICAL_SPEED,
       alt: data.PLANE_ALTITUDE - this.state.cg,
       palt: data.PLANE_ALT_ABOVE_GROUND - this.state.cg,
       galt: data.GROUND_ALTITUDE,
@@ -212,7 +228,7 @@ export class Plane {
       Questions.inTheAir(true);
     }
 
-    const { alt, galt, palt, speed, lat, long } = this.vector;
+    const { alt, galt, palt, speed, vspeed, lat, long } = this.vector;
 
     if (lat === undefined || long === undefined) return;
 
@@ -231,11 +247,15 @@ export class Plane {
     }
 
     const { bank, pitch, heading } = this.orientation;
+    const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
     st.setProperty(`--deg`, heading | 0);
     st.setProperty(`--speed`, speed | 0);
-    planeIcon.querySelector(`.alt`).textContent = `${alt | 0}'`;
+    let sign = vspeed < 0 ? `-` : `+`;
+    planeIcon.querySelector(`.alt`).textContent = `${alt | 0}' (${sign}${abs(
+      vspeed | 0
+    )}fpm)`;
     planeIcon.querySelector(`.alt.ground`).textContent = `${galt | 0}'`;
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 

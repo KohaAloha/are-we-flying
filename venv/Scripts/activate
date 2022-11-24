@@ -37,7 +37,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="d:\temp\_\venv"
+VIRTUAL_ENV="c:\Users\Mike\Documents\Git\projects\is-pomax-flying\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

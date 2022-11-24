@@ -6,6 +6,7 @@ from threading import Timer
 from SimConnect import *
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
+from time import time
 import json
 
 host_name = "localhost"
@@ -54,32 +55,24 @@ class ProxyServer(BaseHTTPRequestHandler):
                 if 'get' in key_values:
                     props = [s.replace("%20","_") for s in key_values['get'].split(",")]
                     for prop in props:
-                        name = sim_connection.remap_virtual_property(prop)
-                        #if sim_connection.valid_property(name):
-                        key_values[prop] = sim_connection.get_property_value(name)
-                        #else:
-                        #    key_values[prop] = "VARIABLE DOES NOT EXIST"
+                        key_values[prop] = sim_connection.get_property_value(prop)
         return key_values
 
 
 class SimConnection():
     def __init__(self): # throws ConnectionError if no sim is running
         self.connected = False
-        with open('simvars.txt') as file:
-            lines = file.readlines()
-            self.sim_vars = [s.strip() for s in lines]
         self.sim_events = []
         self.sim_running = 0
         self.reset_position = False
 
     def handle_id_event(self, eventId):
-        # print(eventId);
+        print(eventId);
         self.sim_events.append(eventId)
         self.sim_running = eventId
         sequence = self.sim_events[-3:]
         if sequence == [1,0,3]:
-            self.reset_position = True
-            # print("reset position...")
+            self.reset_position = int(time() * 1000) # unix timestamp in milliseconds
 
     def handle_simobject_event(self, event):
         # print(event)
@@ -92,11 +85,10 @@ class SimConnection():
     def connect(self):
         print("Connecting to simulator...")
         try:
-            self.sm = SimConnect()
-            self.sm.add_event_listener(self)
+            print("creating instance")
+            self.sm = SimConnect(self)
             self.connected = True
             self.aq = AircraftRequests(self.sm, _time=200)
-            self.sim_vars = []
             camera = self.get_property_value("CAMERA_STATE")
             if camera is not None and camera <= 6:
                 self.sim_running = 3
@@ -105,15 +97,6 @@ class SimConnection():
             seconds = 5.0
             print(f'No simulator found, retrying in {seconds}s')
             Timer(seconds, self.connect, [], {}).start()
-
-
-    def valid_property(self, prop):
-        return prop in self.sim_vars
-
-    def remap_virtual_property(self, name):
-        if name == 'SIM_ACTIVE':
-            return 'AVIONICS_MASTER_SWITCH'
-        return name
 
     def get_property_value(self, name):
         # Special property for determining whether the user's playing the sim or not
@@ -128,11 +111,7 @@ class SimConnection():
         # Special property for determining whether the flight got reset. This value
         # gets wiped once requests, so you only get that signal once per reset.
         if name == "FLIGHT_RESET":
-            if self.reset_position == True:
-                self.reset_position = False
-                return True
-            else:
-                return False
+            return self.reset_position
 
         try:
             value = self.aq.get(name)

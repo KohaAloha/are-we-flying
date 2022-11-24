@@ -9,7 +9,7 @@
 }
 
 #questions li {
-  display: none;
+  /* display: none; */
 }
 
 #questions li:has(input.server-up) {

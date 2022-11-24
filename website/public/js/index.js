@@ -52,8 +52,29 @@ const googleTerrain = L.tileLayer(
   }
 );
 
+const mapLayers = {
+  openStreetMap,
+  googleStreets,
+  googleHybrid,
+  googleSat,
+  googleTerrain,
+};
+
 const mapLayer = googleTerrain;
 mapLayer.addTo(map);
+
+const select = document.querySelector(`.map-options`);
+Object.entries(mapLayers).forEach(([name, map]) => {
+  const opt = document.createElement(`option`);
+  opt.textContent = name;
+  opt.value = name;
+  if (name === `googleTerrain`) opt.selected = `selected`;
+  select.append(opt);
+});
+select.addEventListener(`change`, evt => {
+  Object.values(mapLayers).forEach(layer => layer.removeFrom(map));
+  mapLayers[evt.target.value].addTo(map);
+});
 
 await getAPI(`http://localhost:8080`);
 Questions.serverUp(true);
