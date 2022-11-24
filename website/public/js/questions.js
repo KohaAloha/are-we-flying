@@ -29,10 +29,14 @@ export const Questions = {
   inTheAir(val) {
     setCheckbox(`.in-the-air`, val);
   },
+  planeCrashed(val) {
+    setCheckbox(`.plane-crashed`, val);
+  },
   resetPlayer() {
     this.inGame(false);
-    this.modelLoaded(false);
+    // don't reset the model, we'll get a new one if the player picks one
     this.enginesRunning(false);
     this.inTheAir(false);
+    this.planeCrashed(false);
   },
 };

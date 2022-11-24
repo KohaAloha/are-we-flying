@@ -1,4 +1,4 @@
-const worker = new Worker("js/monitor-worker.js");
+const worker = new Worker("js/event-monitor/monitor-worker.js");
 
 export class Monitor {
   constructor(handleDataFunction) {

@@ -4,4 +4,4 @@ function getAPI(...props) {
   );
 }
 
-// Truly idiotic that we can't just use ESM
+// Truly idiotic that we can't just use ESM in workers

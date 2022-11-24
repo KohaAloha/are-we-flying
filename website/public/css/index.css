@@ -92,6 +92,17 @@ input#title {
     rotate(calc(-90deg - 1deg * var(--deg)));
 }
 
+#plane-icon.dead {
+  background-image: url(images/crashed.png);
+  width: 30px;
+  height: 30px;
+  background-size: 100% 100%;
+}
+
+#plane-icon.dead * {
+  display: none!important;
+}
+
 hr.pin-line {
   position: absolute;
   border: 1px solid red;

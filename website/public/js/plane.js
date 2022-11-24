@@ -1,7 +1,7 @@
 import { deg, dist } from "./utils.js";
 import { getAPI } from "./api.js";
 import { waitFor } from "./wait-for.js";
-import { Monitor } from "./monitor.js";
+import { Monitor } from "./event-monitor/monitor.js";
 import { Duncan } from "./locations.js";
 import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
@@ -12,7 +12,13 @@ let L; // leaflet
 const { abs, sqrt, max } = Math;
 let paused = false;
 
-const SIM_PROPS = ["SIM_RUNNING", "SIM_PAUSED", "FLIGHT_RESET"];
+const SIM_PROPS = [
+  "SIM_RUNNING",
+  "SIM_PAUSED",
+  "FLIGHT_RESET",
+  "CRASH_FLAG",
+  "CRASH_SEQUENCE",
+];
 
 const MODEL_PROPS = ["TITLE", "STATIC_CG_TO_GROUND"];
 
@@ -38,8 +44,6 @@ const FLIGHT_PROPS = [
   "GPS_GROUND_TRUE_TRACK",
   "PLANE_HEADING_DEGREES_MAGNETIC",
   "PLANE_HEADING_DEGREES_TRUE",
-  "CRASH_FLAG",
-  "CRASH_SEQUENCE",
 ];
 
 export class Plane {
@@ -47,11 +51,12 @@ export class Plane {
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
     this.monitor.registerAll(SIM_PROPS, 1000);
-    this.waitForInGame();
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
-    this.running = false;
+    this.state = {};
+    this.running = 0;
+    this.waitForInGame();
   }
 
   init(map, location, heading) {
@@ -86,14 +91,17 @@ export class Plane {
   update(data) {
     this.checkForReset(data);
     this.checkForSimRunning(data);
-    if (!this.running) return;
+    if (this.running < 3) return;
     this.setState(data);
     this.setEngine(data);
     this.updateViz(data);
   }
 
   async waitForInGame() {
-    waitFor(() => getAPI(`http://localhost:8080/loaded-in`)).then(() => {
+    waitFor(async () => {
+      const value = (await getAPI(`SIM_RUNNING`)).SIM_RUNNING;
+      return (value | 0) === 3;
+    }).then(() => {
       Questions.inGame(true);
       this.waitForModel();
     });
@@ -102,7 +110,6 @@ export class Plane {
   async waitForModel() {
     this.monitor.registerAll(MODEL_PROPS, 5000);
   }
-
 
   checkForReset(data) {
     const { FLIGHT_RESET: reset } = data;
@@ -118,19 +125,36 @@ export class Plane {
   }
 
   checkForSimRunning(data) {
-    const { SIM_RUNNING: running } = data;
+    const {
+      SIM_RUNNING: running,
+      CRASH_FLAG: crashed,
+      CRASH_SEQUENCE: reason,
+    } = data;
+
     if (running === undefined) return;
+
     this.running = running;
-    if (running === false) {
-      this.waitForInGame();
-      Questions.resetPlayer();
-    }
-    if (running === true) {
-      paused = false;
+    if (running < 3) {
       if (data.SIM_PAUSED) {
+        // console.log(`player is paused in-sim`)
         paused = true;
-        this.planeIcon?.classList[paused ? `add` : `remove`](`paused`);
+        this.planeIcon?.classList.add(`paused`);
+      } else {
+        // console.log(`player not interacting in-sim`)
+        paused = false;
+        this.waitForInGame();
+        Questions.resetPlayer();
       }
+    }
+    if (running >= 3) {
+      paused = false;
+      this.planeIcon?.classList.remove(`paused`);
+      this.planeIcon?.classList.remove(`dead`);
+    }
+
+    if (crashed || reason) {
+      Questions.planeCrashed(true);
+      this.planeIcon?.classList.add(`dead`);
     }
   }
 
@@ -149,6 +173,7 @@ export class Plane {
 
     Questions.modelLoaded(this.state.title);
     this.monitor.muteAll(...MODEL_PROPS);
+    this.startPolling();
     this.waitForEngines();
   }
 
@@ -171,7 +196,6 @@ export class Plane {
     if (j1 + j2 + j3 + j4 > 0) {
       this.monitor.muteAll(...ENGINE_PROPS);
       Questions.enginesRunning(true);
-      this.startPolling();
     }
   }
 
@@ -207,22 +231,11 @@ export class Plane {
     };
   }
 
-  setCrashData(data) {
-    if (data.CRASH_FLAG === undefined) return;
-
-    this.state.dead = data.CRASH_FLAG > 0 || data.CRASH_SEQUENCE > 0;
-    this.state.crashed = {
-      value: data.CRASH_FLAG,
-      state: data.CRASH_SEQUENCE,
-    };
-  }
-
   async updateViz(data) {
     if (paused) return;
 
     this.setVector(data);
     this.setOrientation(data);
-    this.setCrashData(data);
 
     if (this.orientation.airBorn && this.vector.speed > 0) {
       Questions.inTheAir(true);

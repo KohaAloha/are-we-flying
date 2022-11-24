@@ -36,11 +36,7 @@ class ProxyServer(BaseHTTPRequestHandler):
         if '/connected' in self.path:
             data = True
 
-        # If it is, are we actually playing?
-        elif '/loaded-in' in self.path:
-            data = sim_connection.in_game()
-
-        # And if we are, let me get some variables
+        # Handle API calls
         else:
             data = self.get_api_response()
         self.wfile.write(json.dumps(data).encode('utf-8'))
@@ -67,7 +63,6 @@ class SimConnection():
         self.reset_position = False
 
     def handle_id_event(self, eventId):
-        print(eventId);
         self.sim_events.append(eventId)
         self.sim_running = eventId
         sequence = self.sim_events[-3:]
@@ -85,7 +80,6 @@ class SimConnection():
     def connect(self):
         print("Connecting to simulator...")
         try:
-            print("creating instance")
             self.sm = SimConnect(self)
             self.connected = True
             self.aq = AircraftRequests(self.sm, _time=200)
@@ -102,7 +96,10 @@ class SimConnection():
         # Special property for determining whether the user's playing the sim or not
         if name == "SIM_RUNNING":
             camera = self.get_property_value("CAMERA_STATE")
-            return self.sim_running == 3 and camera is not None and camera <= 6
+            running = self.sim_running == 3 and camera is not None and camera <= 6
+            if running:
+                return 3 + (camera) / 10
+            return self.sim_running
 
         # Special property for determining whether the user's paused on the menu
         if name == "SIM_PAUSED":
@@ -136,11 +133,6 @@ class SimConnection():
 
     def in_game(self):
         camera = self.get_property_value('CAMERA_STATE')
-        # ambient = self.get_property_values('AMBIENT_TEMPERATURE', 'AMBIENT_VISIBILITY', 'AMBIENT_WIND_DIRECTION')
-        # for val in ambient:
-        #     if val == None:
-        #         return False
-        # return ambient != [20.0, 20000.0, 225.0]
         return camera is not None and camera <= 6
 
 def run():

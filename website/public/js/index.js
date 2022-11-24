@@ -1,84 +1,32 @@
-import { waitFor } from "./wait-for.js";
 import { getAPI } from "./api.js";
 import { Duncan } from "./locations.js";
 import { Plane } from "./plane.js";
 import { Questions } from "./questions.js";
+import { map } from "./maps.js";
+import { DEBUG } from "./debug-flag.js";
 
-globalThis.queryMSFS = getAPI;
-const L = await waitFor(async () => window.L);
-const map = L.map("map").setView(Duncan, 15);
+if (DEBUG) globalThis.queryMSFS = getAPI;
 
-const openStreetMap = L.tileLayer(
-  `https://tile.openstreetmap.org/{z}/{x}/{y}.png`,
-  {
-    maxZoom: 19,
-    attribution: `© <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>`,
-  }
-);
+import("./maps.js").then(async ({ mapLayers }) => {
+  const select = document.querySelector(`.map-options`);
 
-const googleStreets = L.tileLayer(
-  "http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
-  {
-    maxZoom: 20,
-    subdomains: ["mt0", "mt1", "mt2", "mt3"],
-    attribution: `© <a href="https://www.google.com/intl/en-GB_ALL/permissions/geoguidelines/">Google Maps</a>`,
-  }
-);
+  Object.entries(mapLayers).forEach(([name, map]) => {
+    const opt = document.createElement(`option`);
+    opt.textContent = name;
+    opt.value = name;
+    if (name === `googleTerrain`) opt.selected = `selected`;
+    select.append(opt);
+  });
 
-const googleHybrid = L.tileLayer(
-  "http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}",
-  {
-    maxZoom: 20,
-    subdomains: ["mt0", "mt1", "mt2", "mt3"],
-    attribution: `© <a href="https://www.google.com/intl/en-GB_ALL/permissions/geoguidelines/">Google Maps</a>`,
-  }
-);
+  select.addEventListener(`change`, (evt) => {
+    Object.values(mapLayers).forEach((layer) => layer.removeFrom(map));
+    mapLayers[evt.target.value].addTo(map);
+  });
 
-const googleSat = L.tileLayer(
-  "http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-  {
-    maxZoom: 20,
-    subdomains: ["mt0", "mt1", "mt2", "mt3"],
-    attribution: `© <a href="https://www.google.com/intl/en-GB_ALL/permissions/geoguidelines/">Google Maps</a>`,
-  }
-);
+  await getAPI(`http://localhost:8080`);
+  Questions.serverUp(true);
 
-const googleTerrain = L.tileLayer(
-  "http://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
-  {
-    maxZoom: 20,
-    subdomains: ["mt0", "mt1", "mt2", "mt3"],
-    attribution: `© <a href="https://www.google.com/intl/en-GB_ALL/permissions/geoguidelines/">Google Maps</a>`,
-  }
-);
-
-const mapLayers = {
-  openStreetMap,
-  googleStreets,
-  googleHybrid,
-  googleSat,
-  googleTerrain,
-};
-
-const mapLayer = googleTerrain;
-mapLayer.addTo(map);
-
-const select = document.querySelector(`.map-options`);
-Object.entries(mapLayers).forEach(([name, map]) => {
-  const opt = document.createElement(`option`);
-  opt.textContent = name;
-  opt.value = name;
-  if (name === `googleTerrain`) opt.selected = `selected`;
-  select.append(opt);
+  await getAPI(`http://localhost:8080/connected`);
+  Questions.msfsRunning(true);
+  new Plane(map, Duncan, 150);
 });
-select.addEventListener(`change`, evt => {
-  Object.values(mapLayers).forEach(layer => layer.removeFrom(map));
-  mapLayers[evt.target.value].addTo(map);
-});
-
-await getAPI(`http://localhost:8080`);
-Questions.serverUp(true);
-
-await getAPI(`http://localhost:8080/connected`);
-Questions.msfsRunning(true);
-new Plane(map, Duncan, 150);

@@ -3,8 +3,8 @@
    - wait for server to be up [-> 2]
 2. Server is running
    - start listening for simulation properties [-> 3]
-3. Simulation is running, user can interact
-   - listen for "in game" event [-> 4]
+3. Simulation is running, user is on main menu
+   - listen for "game started" event [-> 4]
    - listen for "exit" event [-> 10]
 4. User is in-game
    - listen for "paused" event [-> 5]
