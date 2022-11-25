@@ -1,9 +1,9 @@
-export function getAirplaneSrc(title) {
+export function getAirplaneSrc(title = ``) {
   let pic = `plane.png`;
   let plane = title.toLowerCase();
 
   // let's find our plane!
-       if (plane.includes(` 152`)) pic = `152.png`;
+  if (plane.includes(` 152`)) pic = `152.png`;
   else if (plane.includes(` 172`)) pic = `172.png`;
   else if (plane.includes(` 310`)) pic = `310.png`;
   else if (plane.includes(` rudder`)) pic = `top rudder.png`;

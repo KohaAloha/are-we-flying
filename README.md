@@ -16,7 +16,7 @@ Yeah, shocker, the majority of the gaming world is on Windows, despite it still 
 
 Who knew?
 
-(But mostly, MSFS only runs on Windows, so it's not like you can even run this on a different OS and have it... work)
+(But mostly, MSFS only runs on Windows, so if you want to connect to MSFS, you're going to be in Windows anyway)
 
 ### Okay look we need to talk
 
