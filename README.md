@@ -1,6 +1,6 @@
 # Is Pomax Flying?
 
-This may not be an important question to most, but it's an important question to me. Pomax. And possibly one or two other people who also "play" MSFS, but that's good enough for me: let's write some code that can tell whether or not you're flying in MSFS and if so, show where you're flying, and what your general orientation and flight vectors are.
+This may not be an important question to most, but it's an important question to me: Pomax. And possibly one or two other people who also "play" MSFS, but that's good enough for me: let's write some code that can tell whether or not you're flying in MSFS and if so, show where you're flying, and what your general orientation and flight vectors are.
 
 ### you checked in an entire `venv`?
 
@@ -12,9 +12,11 @@ Oh, no, I totally checked that in too. It's in the `website` dir. No need to `np
 
 ### ... and a... `run.bat`? Really?
 
-Yeah, shocker, the majority of the world is on Windows, despite it still being the year of Linux on the desktop. And "every dev uses a macbook".
+Yeah, shocker, the majority of the gaming world is on Windows, despite it still being the year of Linux on the desktop. And "every dev uses a macbook".
 
 Who knew?
+
+(But mostly, MSFS only runs on Windows, so it's not like you can even run this on a different OS and have it... work)
 
 ### Okay look we need to talk
 
