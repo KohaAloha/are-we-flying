@@ -20,7 +20,11 @@ export const Questions = {
   },
   modelLoaded(modelName) {
     let model = `...nothing yet?`;
-    if (modelName) model = `...Looks like a ${modelName}. Nice!`;
+    let article = `a`;
+    if ([`a`, `i`, `u`, `e`, `o`].includes(modelName.substring(0, 1).toLowerCase())) {
+      article += `n`;
+    }
+    if (modelName) model = `...Looks like ${article} ${modelName}. Nice!`;
     questions.querySelector(`.specific-plane`).textContent = model;
   },
   enginesRunning(val) {
@@ -28,6 +32,9 @@ export const Questions = {
   },
   inTheAir(val) {
     setCheckbox(`.in-the-air`, val);
+  },
+  usingAutoPilot(val) {
+    setCheckbox(`.using-ap`, val);
   },
   planeCrashed(val) {
     setCheckbox(`.plane-crashed`, val);
@@ -37,6 +44,7 @@ export const Questions = {
     // don't reset the model, we'll get a new one if the player picks one
     this.enginesRunning(false);
     this.inTheAir(false);
+    this.usingAutoPilot(false);
     this.planeCrashed(false);
   },
 };

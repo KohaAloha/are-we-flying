@@ -1,27 +1,31 @@
-import { getAPI } from "./api.js";
+import { getAPI, setAPI } from "./api.js";
 import { Duncan } from "./locations.js";
 import { Plane } from "./plane.js";
 import { Questions } from "./questions.js";
-import { map } from "./maps.js";
+import { map, mapLayers, updateLayer } from "./maps.js";
 import { DEBUG } from "./debug-flag.js";
 
 if (DEBUG) globalThis.queryMSFS = getAPI;
+if (DEBUG) globalThis.setMSFS = setAPI;
 
 import("./maps.js").then(async ({ mapLayers }) => {
-  const select = document.querySelector(`.map-options`);
+  [1,2].forEach(layer => {
+    const select = document.querySelector(`.map-layer-${layer}`);
 
-  Object.entries(mapLayers).forEach(([name, map]) => {
-    const opt = document.createElement(`option`);
-    opt.textContent = name;
-    opt.value = name;
-    if (name === `googleTerrain`) opt.selected = `selected`;
-    select.append(opt);
-  });
+    Object.entries(mapLayers).forEach(([name, map]) => {
+      const opt = document.createElement(`option`);
+      opt.textContent = name;
+      opt.value = name;
+      if (layer === 1 && name === `openStreetMap`) opt.selected = `selected`;
+      if (layer === 2 && name === `googleTerrain`) opt.selected = `selected`;
+      select.append(opt);
+    });
 
-  select.addEventListener(`change`, (evt) => {
-    Object.values(mapLayers).forEach((layer) => layer.removeFrom(map));
-    mapLayers[evt.target.value].addTo(map);
-  });
+    select.addEventListener(`change`, (evt) => {
+      updateLayer(layer, evt.target.value);
+    });
+
+  })
 
   await getAPI(`http://localhost:8080`);
   Questions.serverUp(true);

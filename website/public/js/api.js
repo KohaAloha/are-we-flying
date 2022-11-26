@@ -4,4 +4,11 @@ function getAPI(...props) {
   );
 }
 
-export { getAPI };
+function setAPI(propName, value) {
+  return fetch(`http://localhost:8080/?${propName}=${value}`, {
+    method: `POST`,
+    mode: "cors",
+  }).then((res) => res.json());
+}
+
+export { getAPI, setAPI };

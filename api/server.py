@@ -16,15 +16,18 @@ sim_connection = None
 class ProxyServer(BaseHTTPRequestHandler):
     def set_headers(self):
         self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Cache-Control', 'no-cache')
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Content-type', 'application/json')
         self.end_headers()
 
     def  log_request(self, code='-', size='-'):
         return
 
     def do_HEAD(self):
+        self.set_headers()
+
+    def do_OPTIONS(self):
         self.set_headers()
 
     def do_GET(self):
@@ -39,6 +42,16 @@ class ProxyServer(BaseHTTPRequestHandler):
         # Handle API calls
         else:
             data = self.get_api_response()
+        self.wfile.write(json.dumps(data).encode('utf-8'))
+
+    def do_POST(self):
+        self.set_headers()
+        query = urlparse(self.path).query
+        data = False
+        if query != '':
+            (prop, value) = query.split("=")
+            prop = prop.replace("%20","_")
+            data = sim_connection.set_property_value(prop, value)
         self.wfile.write(json.dumps(data).encode('utf-8'))
 
     def get_api_response(self):
@@ -83,6 +96,7 @@ class SimConnection():
             self.sm = SimConnect(self)
             self.connected = True
             self.aq = AircraftRequests(self.sm, _time=200)
+            self.ae = AircraftEvents(self.sm)
             camera = self.get_property_value("CAMERA_STATE")
             if camera is not None and camera <= 6:
                 self.sim_running = 3
@@ -99,7 +113,7 @@ class SimConnection():
             running = self.sim_running == 3 and camera is not None and camera <= 6
             if running:
                 return 3 + (camera) / 10
-            return self.sim_running
+            return 0
 
         # Special property for determining whether the user's paused on the menu
         if name == "SIM_PAUSED":
@@ -125,6 +139,9 @@ class SimConnection():
 
     def get_property_values(self, *args):
         return [self.get_property_value(name) for name in args]
+
+    def set_property_value(self, name, value):
+        self.aq.set(name, float(value))
 
     def disconnect(self):
         if self.connected:

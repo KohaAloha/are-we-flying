@@ -1,5 +1,7 @@
+export const defaultPlane = `vertigo.png`;
+
 export function getAirplaneSrc(title = ``) {
-  let pic = `plane.png`;
+  let pic = defaultPlane;
   let plane = title.toLowerCase();
 
   // let's find our plane!
@@ -20,6 +22,7 @@ export function getAirplaneSrc(title = ``) {
   else if (plane.includes(` islander`)) pic = `islander.png`;
   else if (plane.includes(` trislander`)) pic = `trislander.png`;
   else if (plane.includes(`zenith 701`)) pic = `zenith-701.png`;
+  else if (plane.includes(`icon a5`)) pic = `icon-a5.png`;
 
   // float plane variant?
   if (plane.includes(`amphibian`) || plane.includes(`float`)) {

@@ -56,7 +56,23 @@ const mapLayers = {
   googleTerrain,
 };
 
-const mapLayer = googleTerrain;
-mapLayer.addTo(map);
+const layers = [];
 
-export { map, mapLayers };
+function updateLayer(layer, name) {
+  layers[layer-1] = mapLayers[name];
+  update();
+}
+
+function update() {
+  Object.values(mapLayers).forEach((layer) => layer.removeFrom(map));
+  layers[0].setOpacity(1);
+  layers[0].addTo(map);
+  layers[1].setOpacity(0.5);
+  layers[1].addTo(map);
+}
+
+layers[0] = openStreetMap;
+layers[1] = googleTerrain;
+update();
+
+export { map, mapLayers, updateLayer };

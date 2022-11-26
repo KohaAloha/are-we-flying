@@ -1,5 +1,5 @@
 import { deg, dist } from "./utils.js";
-import { getAPI } from "./api.js";
+import { getAPI, setAPI } from "./api.js";
 import { waitFor } from "./wait-for.js";
 import { Monitor } from "./event-monitor/monitor.js";
 import { Duncan } from "./locations.js";
@@ -7,17 +7,19 @@ import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
+import { experimentalAltitudeHold } from "./autopilot.js";
 
 let L; // leaflet
 const { abs, sqrt, max } = Math;
 let paused = false;
 
 const SIM_PROPS = [
-  "SIM_RUNNING",
-  "SIM_PAUSED",
-  "FLIGHT_RESET",
+  "CAMERA_STATE",
   "CRASH_FLAG",
   "CRASH_SEQUENCE",
+  "FLIGHT_RESET",
+  "SIM_PAUSED",
+  "SIM_RUNNING",
 ];
 
 const MODEL_PROPS = ["TITLE", "STATIC_CG_TO_GROUND"];
@@ -31,19 +33,21 @@ const ENGINE_PROPS = [
 ];
 
 const FLIGHT_PROPS = [
-  "SIM_ON_GROUND",
-  "PLANE_LATITUDE",
-  "PLANE_LONGITUDE",
-  "GROUND_VELOCITY",
-  "PLANE_ALTITUDE",
-  "VERTICAL_SPEED",
-  "PLANE_ALT_ABOVE_GROUND",
-  "GROUND_ALTITUDE",
-  "PLANE_BANK_DEGREES",
-  "PLANE_PITCH_DEGREES",
+  "AUTOPILOT_MASTER",
   "GPS_GROUND_TRUE_TRACK",
+  "GROUND_ALTITUDE",
+  "GROUND_VELOCITY",
+  "INDICATED_ALTITUDE",
+  "PLANE_ALT_ABOVE_GROUND",
+  "PLANE_ALTITUDE",
+  "PLANE_BANK_DEGREES",
   "PLANE_HEADING_DEGREES_MAGNETIC",
   "PLANE_HEADING_DEGREES_TRUE",
+  "PLANE_LATITUDE",
+  "PLANE_LONGITUDE",
+  "PLANE_PITCH_DEGREES",
+  "SIM_ON_GROUND",
+  "VERTICAL_SPEED",
 ];
 
 export class Plane {
@@ -56,6 +60,7 @@ export class Plane {
     this.long = long;
     this.state = {};
     this.running = 0;
+    this.lastUpdate = 0;
     this.waitForInGame();
   }
 
@@ -88,7 +93,7 @@ export class Plane {
     this.trail = new Trail(this.map, location);
   }
 
-  update(data) {
+  update(data = {}) {
     this.checkForReset(data);
     this.checkForSimRunning(data);
     if (this.running < 3) return;
@@ -211,7 +216,7 @@ export class Plane {
       long: data.PLANE_LONGITUDE,
       speed: data.GROUND_VELOCITY,
       vspeed: data.VERTICAL_SPEED,
-      alt: data.PLANE_ALTITUDE - this.state.cg,
+      alt: data.INDICATED_ALTITUDE - this.state.cg,
       palt: data.PLANE_ALT_ABOVE_GROUND - this.state.cg,
       galt: data.GROUND_ALTITUDE,
     };
@@ -233,12 +238,14 @@ export class Plane {
 
   async updateViz(data) {
     if (paused) return;
+    const now = Date.now();
 
     this.setVector(data);
     this.setOrientation(data);
 
     if (this.orientation.airBorn && this.vector.speed > 0) {
       Questions.inTheAir(true);
+      Questions.usingAutoPilot(data.AUTOPILOT_MASTER);
     }
 
     const { alt, galt, palt, speed, vspeed, lat, long } = this.vector;
@@ -257,6 +264,7 @@ export class Plane {
       this.long = long;
     } catch (e) {
       console.log(`what is triggering this error?`, e);
+      console.log(lat, long, typeof lat, typeof long);
     }
 
     const { bank, pitch, heading } = this.orientation;
@@ -273,5 +281,8 @@ export class Plane {
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
+
+    experimentalAltitudeHold(this, now - this.lastUpdate, alt, vspeed, bank);
+    this.lastUpdate = now;
   }
 }

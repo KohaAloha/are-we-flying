@@ -1,4 +1,5 @@
 @import url(gyroscope.css);
+@import url(autopilot.css);
 
 * {
   font-family: Verdana;
@@ -45,8 +46,12 @@ formfield {
 }
 
 @keyframes pulsing {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 input#title {
@@ -59,6 +64,10 @@ input#title {
 .viz {
   display: flex;
   flex-direction: row;
+}
+
+#maps-selectors {
+  margin: 0.5em 0;
 }
 
 #map {
@@ -100,7 +109,7 @@ input#title {
 }
 
 #plane-icon.dead * {
-  display: none!important;
+  display: none !important;
 }
 
 hr.pin-line {
