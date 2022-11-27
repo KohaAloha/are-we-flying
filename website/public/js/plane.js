@@ -7,7 +7,7 @@ import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
-import { experimentalAltitudeHold } from "./autopilot.js";
+import { autopilot } from "./autopilot.js";
 
 let L; // leaflet
 const { abs, sqrt, max } = Math;
@@ -94,6 +94,7 @@ export class Plane {
   }
 
   update(data = {}) {
+    if (data === null) return;
     this.checkForReset(data);
     this.checkForSimRunning(data);
     if (this.running < 3) return;
@@ -257,17 +258,18 @@ export class Plane {
     }
 
     try {
-      this.map.setView([lat, long]);
-      this.marker.setLatLng([lat, long]);
-      this.trail.addLatLng([lat, long]);
+      const pair = [lat, long];
+      this.map.setView(pair);
+      this.marker.setLatLng(pair);
+      this.trail.addLatLng(pair);
       this.lat = lat;
       this.long = long;
     } catch (e) {
       console.log(`what is triggering this error?`, e);
-      console.log(lat, long, typeof lat, typeof long);
+      console.log(pair, typeof lat, typeof long);
     }
 
-    const { bank, pitch, heading } = this.orientation;
+    const { airBorn, bank, pitch, heading } = this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
@@ -281,8 +283,8 @@ export class Plane {
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
+    autopilot(airBorn, now - this.lastUpdate, alt, vspeed, speed, bank);
 
-    experimentalAltitudeHold(this, now - this.lastUpdate, alt, vspeed, bank);
     this.lastUpdate = now;
   }
 }

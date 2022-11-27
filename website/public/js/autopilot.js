@@ -1,93 +1,170 @@
 import { getAPI, setAPI } from "./api.js";
-const { abs, min, max } = Math;
+const { abs, atan, min, max } = Math;
 
 const altInput = document.querySelector(`#autopilot input`);
-const holdBtn = document.querySelector(`#autopilot button`);
+const holdBtn = document.querySelector(`#autopilot button.hold`);
+const lvlBtn = document.querySelector(`#autopilot button.level`);
 
 let lastVS = 0;
 let target = 1500;
 let hold = false;
-let banklock = false;
+let level = false;
 
 holdBtn.addEventListener(`click`, (evt) => {
   hold = !hold;
-  holdBtn.classList[hold ? `add` : `remove`](`hold`);
+  holdBtn.classList[hold ? `add` : `remove`](`active`);
   if (hold) {
     target = parseInt(altInput.value);
     lastVS = 0;
   }
 });
 
-export async function experimentalAltitudeHold(
-  plane,
+lvlBtn.addEventListener(`click`, (evt) => {
+  level = !level;
+  lvlBtn.classList[level ? `add` : `remove`](`active`);
+});
+
+function describe(val, description) {
+  console.log(description);
+  return val;
+}
+
+function checkHold(airBorn, speed) {
+  if (hold) {
+    if (!airBorn) holdBtn.click();
+    else if (speed < 50) holdBtn.click();
+  }
+  return hold;
+}
+
+function checkLevel(airBorn, speed) {
+  if (level) {
+    if (!airBorn) lvlBtn.click();
+    else if (speed < 50) lvlBtn.click();
+  }
+  return level;
+}
+
+async function levelPlane(bank) {
+  if (!level) return;
+  if (abs(bank) > 0.01) setAPI(`AILERON_TRIM_PCT`, bank / 90);
+}
+
+let lastCall = 0;
+
+async function experimentalAltitudeHold(
+  airBorn,
   deltaT,
   currentAltitude,
   vspeed,
-  bank
+  speed
 ) {
+  // only run at most once a second.
+  const now = Date.now();
+  if (now - lastCall < 1000) return;
+  lastCall = now;
+
+  checkHold(airBorn, speed);
   if (!hold) return;
 
   const deltaVS = vspeed - lastVS;
   lastVS = vspeed;
 
-  const { ELEVATOR_TRIM_POSITION: currentTrim, AUTOPILOT_MASTER: ap } =
-    await getAPI(`ELEVATOR_TRIM_POSITION`, `AUTOPILOT_MASTER`);
+  const { ELEVATOR_TRIM_POSITION: currentTrim } = await getAPI(
+    `ELEVATOR_TRIM_POSITION`
+  );
 
   const diff = abs(target - currentAltitude);
 
-  //   console.log(
-  //     [
-  //       `let's trim! current altitude=${currentAltitude}, target altitude=${target}, diff=${diff}`,
-  //       `current trim: ${currentTrim}, VS: ${vspeed | 0} fps, dVS/s: ${
-  //         (deltaVS / (deltaT / 1000)) | 0
-  //       } fps²`,
-  //       `bank: ${bank}`,
-  //     ].join(`\n`)
-  //   );
+  // The faster you go, the smaller the corrections are, as "more of it will kick in" per time unit.
+  //let step = speed / 40000;
+  let step = 1 / (2 * speed);
+  let maxVS = speed * 10;
+  let bracket = speed;
+  let trim = 0;
 
-  let bracket = 15;
-  let newTrim = currentTrim;
-  let step = 0.003;
+  // TODO: the bigger the difference between target and current, the bigger the step should be.
+  step *= 1 + diff / 2000;
 
   // Do we need to move down in flight level?
-  if (target < currentAltitude - bracket) {
+  if (target < currentAltitude) {
     console.log(`go down (${-diff})`);
-    if (vspeed > max(-1500, -diff)) {
-      console.log(`bump down`);
-      if (deltaVS > -30) newTrim -= step;
-      if (deltaVS < -100) newTrim += step / 10;
+    if (vspeed > -maxVS / 2) {
+      if (deltaVS > -speed / 2) trim = describe(-step, `increase descent`);
+      if (deltaVS < 2 * -speed) trim = describe(step, `slow rate of descent`);
     }
-    if (vspeed < -500) newTrim += step / 3;
-    if (vspeed < -1000) newTrim += step / 5;
+    if (diff < bracket) {
+      if (vspeed > 0)
+        trim = describe(
+          -step,
+          `hard trim if we're shooting through our target`
+        );
+      if (vspeed < 0)
+        trim = describe(step, `hard trim if we're shooting through our target`);
+    }
+    if (deltaVS > 0 || vspeed > 0)
+      trim = describe(-step * 2, `still ascending instead of descending...`);
+    // compensation for over-trimming
+    if (deltaVS < 3 * -speed)
+      trim = describe(step / 5, `accelerating descent too much`);
+    if (vspeed < -maxVS / 2) trim = describe(step / 5, `descending too fast`);
+    if (vspeed < -maxVS)
+      trim = describe(step / 5, `(descending *way* too fast)`);
+    if (vspeed < -maxVS * 2)
+      trim = describe(step / 5, `(descending *super* way too fast)`);
   }
 
   // Do we need to move up in flight level?
-  if (target > currentAltitude + bracket) {
+  if (target > currentAltitude) {
     console.log(`go up (${diff})`);
-    if (vspeed < min(1500, diff)) {
-      console.log(`bump up`);
-      if (deltaVS < 30) newTrim += step;
-      if (deltaVS > 100) newTrim -= step / 10;
+    if (vspeed < maxVS / 2) {
+      if (deltaVS < speed / 2) trim = describe(step, `increase ascent`);
+      if (deltaVS > 2 * speed)
+        trim = describe(-step / 10, `slow rate of ascent`);
     }
-    if (vspeed > 500) newTrim -= step / 3;
-    if (vspeed > 1000) newTrim -= step / 5;
+    if (diff < bracket) {
+      if (vspeed > 0)
+        trim = describe(
+          -step,
+          `hard trim if we're shooting through our target`
+        );
+      if (vspeed < 0)
+        trim = describe(step, `hard trim if we're shooting through our target`);
+    }
+    if (deltaVS < 0 || vspeed < 0)
+      trim = describe(step * 2, `still descending instead of ascending...`);
+    // compensation for over-trimming
+    if (deltaVS > 3 * speed)
+      trim = describe(-step / 5, `accelerating ascent too much`);
+    if (vspeed > maxVS / 2) trim = describe(-step / 5, `ascending too fast`);
+    if (vspeed > maxVS) trim = describe(-step / 5, `(ascending *way* too fast`);
+    if (vspeed > maxVS * 2)
+      trim = describe(-step / 5, `(ascending *super* way too fast)`);
   }
 
-  // dampen when we're close-to-target
-  if (abs(diff) < 100) {
-    console.log(`2x dampened`);
-    newTrim = currentTrim + (newTrim - currentTrim) / 2;
+  // dampen when we're close-to-target...
+  if (abs(diff) < 50) trim = describe(trim / 4, `4x dampened`);
+  else if (abs(diff) < 100) trim = describe(trim / 2, `2x dampened`);
+
+  // ...set the autopilot trim...
+  const update = currentTrim + trim;
+  console.log(`setting trim: ${update}, max VS: ${maxVS} fpm`);
+  setAPI(`ELEVATOR_TRIM_POSITION`, update);
+}
+
+export function autopilot(
+  airBorn,
+  deltaT,
+  currentAltitude,
+  vspeed,
+  speed,
+  bank
+) {
+  if (checkHold(airBorn, speed)) {
+    experimentalAltitudeHold(airBorn, deltaT, currentAltitude, vspeed, speed);
   }
 
-  // dampen when we're close-to-target
-  if (abs(diff) < 50) {
-    console.log(`4x dampened`);
-    newTrim = currentTrim + (newTrim - currentTrim) / 2;
+  if (checkLevel(airBorn, speed)) {
+    levelPlane(bank);
   }
-
-  // fix the trim
-  setAPI(`ELEVATOR_TRIM_POSITION`, newTrim);
-
-  // level our plane
-  if (abs(bank) > 0.2) setAPI(`AILERON_TRIM_PCT`, bank / 90);
 }
