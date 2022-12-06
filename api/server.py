@@ -42,7 +42,13 @@ class ProxyServer(BaseHTTPRequestHandler):
         # Handle API calls
         else:
             data = self.get_api_response()
-        self.wfile.write(json.dumps(data).encode('utf-8'))
+
+        # make sure the response is never empty
+        if data != None:
+            data = json.dumps(data).encode('utf-8')
+        else:
+            data = "{}";
+        self.wfile.write(data)
 
     def do_POST(self):
         self.set_headers()

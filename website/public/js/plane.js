@@ -7,7 +7,7 @@ import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
-import { autopilot } from "./autopilot.js";
+import { feedAutopilot } from "./autopilot/autopilot.js";
 
 let L; // leaflet
 const { abs, sqrt, max } = Math;
@@ -25,7 +25,7 @@ const SIM_PROPS = [
 const MODEL_PROPS = ["TITLE", "STATIC_CG_TO_GROUND"];
 
 const ENGINE_PROPS = [
-  "ENGINE TYPE",
+  "ENGINE_TYPE",
   "ENG_COMBUSTION:1",
   "ENG_COMBUSTION:2",
   "ENG_COMBUSTION:3",
@@ -33,13 +33,12 @@ const ENGINE_PROPS = [
 ];
 
 const FLIGHT_PROPS = [
+  "AIRSPEED_TRUE",
   "AUTOPILOT_MASTER",
   "GPS_GROUND_TRUE_TRACK",
   "GROUND_ALTITUDE",
-  "GROUND_VELOCITY",
   "INDICATED_ALTITUDE",
   "PLANE_ALT_ABOVE_GROUND",
-  "PLANE_ALTITUDE",
   "PLANE_BANK_DEGREES",
   "PLANE_HEADING_DEGREES_MAGNETIC",
   "PLANE_HEADING_DEGREES_TRUE",
@@ -105,8 +104,12 @@ export class Plane {
 
   async waitForInGame() {
     waitFor(async () => {
-      const value = (await getAPI(`SIM_RUNNING`)).SIM_RUNNING;
-      return (value | 0) === 3;
+      try {
+        const { SIM_RUNNING: value } = await getAPI(`SIM_RUNNING`);
+        return (value | 0) === 3;
+      } catch (e) {
+        return 0;
+      }
     }).then(() => {
       Questions.inGame(true);
       this.waitForModel();
@@ -215,9 +218,9 @@ export class Plane {
     this.vector = {
       lat: data.PLANE_LATITUDE,
       long: data.PLANE_LONGITUDE,
-      speed: data.GROUND_VELOCITY,
+      speed: data.AIRSPEED_TRUE,
       vspeed: data.VERTICAL_SPEED,
-      alt: data.INDICATED_ALTITUDE - this.state.cg,
+      alt: data.INDICATED_ALTITUDE,
       palt: data.PLANE_ALT_ABOVE_GROUND - this.state.cg,
       galt: data.GROUND_ALTITUDE,
     };
@@ -227,8 +230,8 @@ export class Plane {
     if (data.PLANE_PITCH_DEGREES === undefined) return;
 
     this.orientation = {
-      airBorn: data.SIM_ON_GROUND === 0,
-      heading: deg(data.PLANE_HEADING_DEGREES_TRUE),
+      airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
+      heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       bank: deg(data.PLANE_BANK_DEGREES),
       yaw: deg(
@@ -257,17 +260,19 @@ export class Plane {
       this.startNewTrail([lat, long]);
     }
 
+    const pair = [lat, long];
+    this.map.setView(pair);
+    this.marker.setLatLng(pair);
+
     try {
-      const pair = [lat, long];
-      this.map.setView(pair);
-      this.marker.setLatLng(pair);
       this.trail.addLatLng(pair);
-      this.lat = lat;
-      this.long = long;
     } catch (e) {
-      console.log(`what is triggering this error?`, e);
-      console.log(pair, typeof lat, typeof long);
+      // console.log(`what is triggering this error?`, e);
+      // console.log(pair, typeof lat, typeof long);
     }
+
+    this.lat = lat;
+    this.long = long;
 
     const { airBorn, bank, pitch, heading } = this.orientation;
     const { planeIcon } = this;
@@ -283,7 +288,7 @@ export class Plane {
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
-    autopilot(airBorn, now - this.lastUpdate, alt, vspeed, speed, bank);
+    feedAutopilot(airBorn, alt, pitch,  vspeed, speed, bank, heading);
 
     this.lastUpdate = now;
   }

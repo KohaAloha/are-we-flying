@@ -11,4 +11,29 @@ function setAPI(propName, value) {
   }).then((res) => res.json());
 }
 
-export { getAPI, setAPI };
+const API = {
+  values: {
+    get AILERON_TRIM() {
+      return getAPI(`AILERON_TRIM_PCT`);
+    },
+    set AILERON_TRIM(percent) {
+      setAPI(`AILERON_TRIM_PCT`, percent / 100);
+    },
+    get ELEVATOR_TRIM() {
+      return getAPI(`ELEVATOR_TRIM_POSITION`);
+    },
+    set ELEVATOR_TRIM(radians) {
+      setAPI(`ELEVATOR_TRIM_POSITION`, radians);
+    },
+    get RUDDER_TRIM() {
+      return getAPI(`RUDDER_TRIM_PCT`);
+    },
+    set RUDDER_TRIM(percent) {
+      setAPI(`RUDDER_TRIM_PCT`, percent / 100);
+    },
+  },
+};
+
+globalThis.API = API;
+
+export { getAPI, setAPI, API };
