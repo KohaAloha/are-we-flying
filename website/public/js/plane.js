@@ -7,7 +7,7 @@ import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
-import { feedAutopilot } from "./autopilot/autopilot.js";
+import { MapMarker } from "./map-marker.js";
 
 let L; // leaflet
 const { abs, sqrt, max } = Math;
@@ -79,7 +79,7 @@ export class Plane {
         iconAnchor: [73 / 4, 50 / 4],
         popupAnchor: [10, 10],
         className: `map-pin`,
-        html: Gyro.html(heading),
+        html: MapMarker.getHTML(heading),
       }),
     };
     this.map = map;
@@ -230,7 +230,8 @@ export class Plane {
     if (data.PLANE_PITCH_DEGREES === undefined) return;
 
     this.orientation = {
-      airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
+      airBorn:
+        data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
       heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       bank: deg(data.PLANE_BANK_DEGREES),
@@ -280,15 +281,13 @@ export class Plane {
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
     st.setProperty(`--deg`, heading | 0);
     st.setProperty(`--speed`, speed | 0);
-    let sign = vspeed < 0 ? `-` : `+`;
-    planeIcon.querySelector(`.alt`).textContent = `${alt | 0}' (${sign}${abs(
-      vspeed | 0
-    )}fpm)`;
-    planeIcon.querySelector(`.alt.ground`).textContent = `${galt | 0}'`;
+
+    let altitude =
+      (galt | 0) === 0 ? `${alt | 0}'` : `${(alt - galt) | 0}' (${alt | 0}')`;
+    planeIcon.querySelector(`.alt`).textContent = altitude;
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
-    feedAutopilot(airBorn, alt, pitch,  vspeed, speed, bank, heading);
 
     this.lastUpdate = now;
   }

@@ -59,7 +59,7 @@ const mapLayers = {
 const layers = [];
 
 function updateLayer(layer, name) {
-  layers[layer-1] = mapLayers[name];
+  layers[layer - 1] = mapLayers[name];
   update();
 }
 

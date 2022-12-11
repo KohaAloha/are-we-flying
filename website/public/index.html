@@ -5,32 +5,34 @@
     <meta charset="utf-8" />
     <title>Is Pomax Flying?</title>
     <link rel="stylesheet" href="css/index.css" />
-    <link rel="stylesheet" href="css/questions.css" />
+    1
     <link rel="stylesheet" href="css/leaflet.css" />
     <script type="module" src="js/index.js" defer async></script>
     <script src="js/leaflet.js" defer async></script>
   </head>
   <body>
     <h1>Is Pomax flying?</h1>
+
     <p>
-      Let's see if Pomax is currently flying a plan in Microsoft Flight
+      Let's see if Pomax is currently flying around in Microsoft Flight
       Simulator 2020...
     </p>
-    <ul id="questions">
-      <!-- templated from questions.html -->
-    </ul>
+
+    <ul id="questions" data-description="Templated from questions.html"></ul>
+
     <div id="maps-selectors">
       Map underlay:
       <select class="map-layer-1"></select>
       Map overlay:
       <select class="map-layer-2"></select>
     </div>
+
     <div id="viz">
       <div id="map" style="width: 600px; height: 400px"></div>
-      <div id="gyroscope"><!-- templated from gyroscope.html --></div>
-    </div>
-    <div id="autopilot">
-      <!-- templated from autopilot.html -->
+      <div
+        id="gyroscope"
+        data-description="Templated from gyroscope.html"
+      ></div>
     </div>
   </body>
 </html>

@@ -7,16 +7,23 @@ export class Trail {
     this.coords = [];
     if (pair) this.addLatLng(pair);
   }
+
   addLatLng(pair) {
     const [lat, long] = pair;
     if (!lat && !long) return;
 
-    this.coords.push(pair);
-    if (this.coords.length === 2) {
-      this.line = L.polyline([...this.coords]);
+    const { coords } = this;
+
+    coords.push(pair);
+    const l = coords.length;
+
+    if (l < 2) return;
+
+    if (l === 2) {
+      this.line = L.polyline([...coords], { className: `flight-trail` });
       this.line.addTo(this.map);
-      globalThis.trails.push(this);
     }
-    this.line?.addLatLng(pair);
+
+    this.line.addLatLng(pair);
   }
 }
