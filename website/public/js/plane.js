@@ -8,10 +8,12 @@ import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
 import { MapMarker } from "./map-marker.js";
+import { setupGraph } from "./svg-graph.js";
 
 let L; // leaflet
 const { abs, sqrt, max } = Math;
 let paused = false;
+let graph;
 
 const SIM_PROPS = [
   "CAMERA_STATE",
@@ -35,6 +37,7 @@ const ENGINE_PROPS = [
 const FLIGHT_PROPS = [
   "AIRSPEED_TRUE",
   "AUTOPILOT_MASTER",
+  "ELEVATOR_TRIM_POSITION",
   "GPS_GROUND_TRUE_TRACK",
   "GROUND_ALTITUDE",
   "INDICATED_ALTITUDE",
@@ -53,7 +56,6 @@ export class Plane {
   constructor(map, location, heading) {
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
-    this.monitor.registerAll(SIM_PROPS, 1000);
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
@@ -117,6 +119,7 @@ export class Plane {
   }
 
   async waitForModel() {
+    this.monitor.registerAll(SIM_PROPS, 1000);
     this.monitor.registerAll(MODEL_PROPS, 5000);
   }
 
@@ -209,6 +212,16 @@ export class Plane {
   }
 
   async startPolling() {
+    if (!graph) {
+      graph = setupGraph(document.body, 600, 400);
+      graph.start();
+      graph.setProperties(`ground`, {
+        fill: {
+          baseline: 0,
+          color: `saddlebrown`,
+        },
+      });
+    }
     this.monitor.registerAll(FLIGHT_PROPS, 1000);
   }
 
@@ -234,6 +247,7 @@ export class Plane {
         data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
       heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
       pitch: deg(data.PLANE_PITCH_DEGREES),
+      trim: data.ELEVATOR_TRIM_POSITION,
       bank: deg(data.PLANE_BANK_DEGREES),
       yaw: deg(
         data.PLANE_HEADING_DEGREES_MAGNETIC - data.GPS_GROUND_TRUE_TRACK
@@ -275,7 +289,7 @@ export class Plane {
     this.lat = lat;
     this.long = long;
 
-    const { airBorn, bank, pitch, heading } = this.orientation;
+    const { airBorn, bank, pitch, trim, heading } = this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
@@ -283,11 +297,18 @@ export class Plane {
     st.setProperty(`--speed`, speed | 0);
 
     let altitude =
-      (galt | 0) === 0 ? `${alt | 0}'` : `${(alt - galt) | 0}' (${alt | 0}')`;
+      (galt | 0) === 0 ? `${alt | 0}'` : `${palt | 0}' (${alt | 0}')`;
     planeIcon.querySelector(`.alt`).textContent = altitude;
     planeIcon.querySelector(`.speed`).textContent = `${speed | 0}kts`;
 
     Gyro.setPitchBank(pitch, bank);
+
+    graph.addValue(`altitude`, alt);
+    graph.addValue(`pitch`, pitch);
+    graph.addValue(`trim`, trim);
+    graph.addValue(`bank`, bank);
+    graph.addValue(`vspeed`, vspeed);
+    graph.addValue(`ground`, galt);
 
     this.lastUpdate = now;
   }

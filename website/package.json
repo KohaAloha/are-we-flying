@@ -12,6 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.18.2",
+    "express-http-proxy": "^1.6.3",
     "open": "^8.4.0"
   }
 }

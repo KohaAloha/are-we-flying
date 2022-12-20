@@ -1,6 +1,3 @@
-@import url(gyroscope.css);
-@import url(autopilot.css);
-
 * {
   font-family: Verdana;
 }
@@ -106,6 +103,9 @@ input#title {
   width: 30px;
   height: 30px;
   background-size: 100% 100%;
+  position: absolute;
+  left: 2px;
+  top: -3px;
 }
 
 #plane-icon.dead * {
@@ -133,4 +133,8 @@ img.shadow {
   position: absolute;
   filter: blur(3px) opacity(0.5);
   transform: rotate(calc(1deg * var(--deg)));
+}
+
+body > canvas, body > svg {
+  border: 1px solid black;
 }

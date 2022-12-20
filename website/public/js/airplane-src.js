@@ -1,4 +1,4 @@
-export const defaultPlane = `vertigo.png`;
+export const defaultPlane = `plane.png`;
 
 export function getAirplaneSrc(title = ``) {
   let pic = defaultPlane;
@@ -18,6 +18,10 @@ export function getAirplaneSrc(title = ``) {
   else if (plane.includes(` carbon`)) pic = `carbon.png`;
   else if (plane.includes(` mb-339`)) pic = `mb-339.png`;
   else if (plane.includes(` searey`)) pic = `searey.png`;
+  else if (plane.includes(`wilga`)) {
+    pic = `wilga.png`;
+    if (plane.match(/\d+h/)) pic = `wilga-float.png`;
+  }
   else if (plane.includes(` kodiak`)) pic = `kodiak.png`;
   else if (plane.includes(` islander`)) pic = `islander.png`;
   else if (plane.includes(` trislander`)) pic = `trislander.png`;

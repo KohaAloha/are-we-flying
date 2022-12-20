@@ -1,5 +1,5 @@
 function getAPI(...props) {
-  return fetch(`http://localhost:8080/?get=${props.join(`,`)}`).then((res) =>
+  return fetch(`/api/?get=${props.join(`,`)}`).then((res) =>
     res.json()
   );
 }
