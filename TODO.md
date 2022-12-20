@@ -1,1 +1,1 @@
-rewrite plane.js to a player.js that handles all the flags and UI bits, and a separate monitor that monitors the various flags and turns them into event triggers
+Add the webpage controls for working with the python autopilot

@@ -8,7 +8,7 @@ Yep. No need to `pip install` for you.
 
 ### but you didn't check in a `node_modules`?
 
-Oh, no, I totally checked that in too. It's in the `website` dir. No need to `npm install` for you either.
+Oh, no, I totally checked that in too. It's in the `website` dir. No need to `npm install` for you either (at least, I think? I don't think anything in it is compiled native).
 
 ### ... and a... `run.bat`? Really?
 
@@ -16,7 +16,7 @@ Yeah, shocker, the majority of the gaming world is on Windows, despite it still 
 
 Who knew?
 
-(But mostly, MSFS only runs on Windows, so if you want to connect to MSFS, you're going to be in Windows anyway)
+(But mostly, MSFS only runs on Windows, so if you want to connect to MSFS, you're going to be in Windows anyway. Or Xbox, but then you're not running code from github)
 
 ### Okay look we need to talk
 
