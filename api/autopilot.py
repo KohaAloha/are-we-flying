@@ -3,6 +3,8 @@ from threading import Timer
 from math import degrees, radians, pi, copysign
 from simconnection import SimConnection
 
+MSFS_RADIANS = pi / 10  # Yep: it's 0.31415[...] for...reasons?
+
 LEVEL_FLIGHT = 'LVL'
 HEADING_MODE = 'HDG'
 VERTICAL_SPEED_HOLD = 'VSH'
@@ -40,8 +42,8 @@ class AutoPilot():
         self.lvl_center = 0
 
     def schedule_ap_call(self) -> None:
-        # call run function 1 second from now
-        Timer(1, self.run_auto_pilot, [], {}).start()
+        # call run function at (approximately) 6Hz
+        Timer(0.166, self.run_auto_pilot, [], {}).start()
 
     def get_state(self) -> Dict[str, any]:
         state = {'AP_STATE': self.autopilot_enabled}
@@ -157,47 +159,145 @@ class AutoPilot():
         self.prev_vspeed = vspeed
 
     def run_vertical_speed_hold(self, alt, speed, vspeed, pitch, trim) -> None:
-        dVS = vspeed - self.prev_vspeed
-        dVS_max = constrain(abs(vspeed)/10, 1, 10)
-        min_max = constrain_map(speed, 50, 150, 0.0003, 0.001)
-        correct = constrain_map(vspeed, -100, 100, min_max, -min_max)
+        """
+        Our action table:
 
-        # print(f'vspeed: {vspeed}')
-        # print(f'diff: {diff}')
-        # print(f'dVS: {dVS}')
-        # print(f'trim: {trim}')
-        # print(f'pitch: {pitch}')
-        # print(f'correct: {correct}')
+               target      VS    dVS     state
+               -----------------------------------------------------------------------
+                below      +      +      away from target, at increasing rate
+                below      +      0      heading away from target at fixed speed
+                below      +      -      away from target, but slowing down
+                below      -      -      heading towards target, at increasing rate
+                below      -      0      heading towards target at fixed speed
+                below      -      +      heading towards target, but slowing down
 
-        if vspeed < 0:
-            # Do we need to pitch up?
-            if dVS < dVS_max:
-                # print('pitch up')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim + correct)
-            elif dVS > 3*dVS_max:
-                # print('pitching up way too fast')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
-            elif dVS < 2*dVS_max:
-                # print('pitching up too fast')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
+                above      -      -      away from target, at increasing rate
+                above      -      0      heading away from target at fixed speed
+                above      -      +      away from target, but slowing down
+                above      +      +      heading towards target, at increasing rate
+                above      +      0      heading towards target at fixed speed
+                above      +      -      heading towards target, but slowing down
 
-        elif vspeed > 0:
-            # Or do we need to pitch down?
-            if dVS > -dVS_max:
-                # print('pitch down')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim + correct)
-            elif dVS < 3 * -dVS_max:
-                # print('pitching down way too much')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
-            elif dVS < 2 * -dVS_max:
-                # print('pitching down too much')
-                self.api.set_property_value(
-                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
+        And our rules:
+
+          - VS cannot exceed (10 * speed), either up or down
+          - dVS cannot exceed (speed / 10), either up or down
+
+        Which should hopefully guarantee safe trim/airspeed values.
+
+        Our trim correction table:
+
+               target      VS    dVS     state
+               -----------------------------------------------------------------------
+                below      +      +      trim down a lot
+                below      +      0      trim down
+                below      +      -      trim down
+                below      -      -      trim up if VS or dVS exceed their limits
+                below      -      0      trim down
+                below      -      +      trim down a lot
+
+                above      -      -      trim up a lot
+                above      -      0      trim up
+                above      -      +      trim up
+                above      +      +      trim down if VS or dVS exceed their limits
+                above      +      0      trim up
+                above      +      -      trim up a lot
+
+        Looking at the dVS values, We can simplify the different actions a little:
+
+               target      VS    dVS     state
+               -----------------------------------------------------------------------
+                below      -      -      trim up if VS or dVS exceed their limits
+                below     +/-     +      trim down a lot
+                below         else        trim down
+
+                above      +      +      trim down if VS or dVS exceed their limits
+                above     +/-     -      trim up a lot
+                above        else        trim up
+
+
+        Trim correction is based on VS and dVS, using constraint_map, which maps a value
+        from one domain to another domain, while constraining the output to the new
+        domain's min and max values. Negative Trim values represent "pitch down", positive
+        trim values represent "pitch up.
+
+            trim_limit = 1 degree
+            correction = 0
+            if dVS exceeds limit:
+                # negative dVS means we're dropping, so should map to pitching up
+                correction = correction + constraint_map(dVS, -dVS_limit, dVS_limit, trim_limit, -trim_limit)
+            if vspeed exceeds limit:
+                # negative vspeed means we're dropping, so should also map to pitching up
+                correction = correction + constraint_map(vspeed, -vs_limit, vs_limit, trim_limit, -trim_limit)
+
+        By running that check first, we cam further simplify our subsequent table:
+
+               target      VS    dVS     state
+               -----------------------------------------------------------------------
+                below     any     +      trim down a lot
+                below        else        trim down
+
+                above     any     -      trim up a lot
+                above        else        trim up
+
+        """
+
+        target = 0
+        diff = target - vspeed
+
+        # we want this in feet per second so we need to divide by our Timer value:
+        dVS = (vspeed - self.prev_vspeed) / 0.16
+
+        vs_max = 10 * speed
+        dVS_max = speed / 8
+        trim_limit = 0.16 * MSFS_RADIANS / 90
+        correction = 0
+
+        step = constrain_map(abs(diff), 0, vs_max, 0.00003, trim_limit)
+
+        # corrections when we're over our limits
+        if dVS < -dVS_max:
+            correction += step
+        elif dVS > dVS_max:
+            correction -= step
+
+        if vspeed < -vs_max:
+            correction += step
+        elif vspeed > vs_max:
+            correction -= step
+
+        # Is the target below us, meaning we need to pitch down?
+        if correction == 0 and diff < 0:
+            if dVS >= 0:
+                # we're accelerating in the wrong direction, trim down a lot
+                correction -= step
+            else:
+                # trim down a bit
+                correction -= step
+
+        # Is the target above us, meaning we need to pitch up?
+        if correction == 0 and diff > 0:
+            if dVS <= 0:
+                # we're accelerating in the wrong direction, trim up a lot
+                correction += step
+            else:
+                # trim up a bit
+                correction += step
+
+        print(f'target: {target}')
+        print(f'vspeed: {vspeed}')
+        print(f'diff: {diff}')
+        print(f'dVS: {dVS}')
+        print(f'speed: {speed}')
+        print(f'vs_max: {vs_max}')
+        print(f'dVS_max: {dVS_max}')
+        print(f'trim: {trim}')
+        print(f'step: {step}')
+        print(f'correction: {correction}')
+
+        # Then update our trim
+        self.api.set_property_value(
+            'ELEVATOR_TRIM_POSITION', trim + correction)
 
     def set_initial_ALT_trim(self, target):
         # In order to get us going, we set an initial "reasonable"
