@@ -3,6 +3,7 @@ import { getAPI, setAPI } from "./api.js";
 import { waitFor } from "./wait-for.js";
 import { Monitor } from "./event-monitor/monitor.js";
 import { Duncan } from "./locations.js";
+import { Autopilot } from "./autopilot.js";
 import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
@@ -44,13 +45,14 @@ const FLIGHT_PROPS = [
   "PLANE_ALT_ABOVE_GROUND",
   "PLANE_BANK_DEGREES",
   "PLANE_HEADING_DEGREES_MAGNETIC",
-  "PLANE_HEADING_DEGREES_TRUE",
   "PLANE_LATITUDE",
   "PLANE_LONGITUDE",
   "PLANE_PITCH_DEGREES",
   "SIM_ON_GROUND",
   "VERTICAL_SPEED",
 ];
+
+let centerBtn;
 
 export class Plane {
   constructor(map, location, heading) {
@@ -63,6 +65,7 @@ export class Plane {
     this.running = 0;
     this.lastUpdate = 0;
     this.waitForInGame();
+    centerBtn = document.getElementById(`center-map`);
   }
 
   init(map, location, heading) {
@@ -74,8 +77,6 @@ export class Plane {
   async addPlaneIconToMap(map, location = Duncan, heading = 0) {
     L = await waitFor(async () => window.L);
     const props = {
-      autoPan: false,
-      autoPanOnFocus: false,
       icon: L.divIcon({
         iconSize: [73 / 2, 50 / 2],
         iconAnchor: [73 / 4, 50 / 4],
@@ -185,6 +186,7 @@ export class Plane {
 
     Questions.modelLoaded(this.state.title);
     this.monitor.muteAll(...MODEL_PROPS);
+    this.autopilot = new Autopilot();
     this.startPolling();
     this.waitForEngines();
   }
@@ -276,7 +278,7 @@ export class Plane {
     }
 
     const pair = [lat, long];
-    this.map.setView(pair);
+    if (centerBtn.checked) this.map.setView(pair);
     this.marker.setLatLng(pair);
 
     try {

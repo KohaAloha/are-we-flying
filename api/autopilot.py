@@ -1,6 +1,6 @@
 from typing import Dict, Union
 from threading import Timer
-from math import degrees, radians, pi
+from math import degrees, radians, pi, copysign
 from simconnection import SimConnection
 
 LEVEL_FLIGHT = 'LVL'
@@ -53,19 +53,25 @@ class AutoPilot():
         if ap_type not in self.modes:
             return None
         self.modes[ap_type] = not self.modes[ap_type]
+        if self.modes[ap_type]:
+            if ap_type == VERTICAL_SPEED_HOLD:
+                print(f'Engaging VS hold')
+                self.prev_vspeed = self.api.get_standard_property_value(
+                    'VERTICAL_SPEED')
+            if ap_type == LEVEL_FLIGHT:
+                print(f'Engaging level flight')
         return self.modes[ap_type]
 
     def set_target(self, ap_type: str, value: float) -> float:
         if ap_type in self.modes:
             self.modes[ap_type] = value if value != None else False
-            if ap_type == VERTICAL_SPEED_HOLD:
-                print(f'Engaging VS hold to {value}')
-                self.prev_vspeed = self.api.get_standard_property_value(
-                    'VERTICAL_SPEED')
             if ap_type == ALTITUDE_HOLD:
                 print(f'Engaging ALT hold to {value}')
                 self.prev_alt = self.api.get_standard_property_value(
                     'INDICATED_ALTITUDE')
+                self.set_initial_ALT_trim(value)
+            if ap_type == HEADING_MODE:
+                print(f'Setting heading target to {value}')
             return value
         return None
 
@@ -90,28 +96,29 @@ class AutoPilot():
         self.schedule_ap_call()
 
     def fly_level(self) -> None:
+        speed = self.api.get_standard_property_value('AIRSPEED_TRUE')
         bank = self.api.get_standard_property_value('PLANE_BANK_DEGREES')
         trim = self.api.get_standard_property_value('AILERON_TRIM_PCT')
+        heading = self.api.get_standard_property_value(
+            'PLANE_HEADING_DEGREES_MAGNETIC')
 
-        if bank is None or trim is None:
+        if (speed and bank and trim and heading) is None:
             return
 
         bank = degrees(bank)
+        heading = degrees(heading)
+
         self.lvl_center = center = self.lvl_center + \
             constrain_map(bank, -5, 5, -2, 2)
-        print(f'trim: {trim}, bank: {bank}, center: {center}')
 
         # Do we need to correct this center further in order to account for intended heading?
-        heading = self.api.get_standard_property_value(
-            'PLANE_HEADING_DEGREES_MAGNETIC')
-        if heading is None:
-            return
-        heading = degrees(heading)
         target = self.modes[HEADING_MODE]
         if target is None:
             target = 360
-        hdiff = get_compass_diff(heading, target - 1)  # not a fan of this 0.5, but it's necessary for sure
-        bump = constrain_map(hdiff, -7, 7, -1.7, 1.7)
+        # not a fan of this 0.5, but it's necessary for sure
+        hdiff = get_compass_diff(heading, target - 0.5)
+        rate_value = speed / 80
+        bump = constrain_map(hdiff, -7, 7, -rate_value, rate_value)
         self.lvl_center = center = self.lvl_center + bump
 
         # Done, set new trim
@@ -124,13 +131,12 @@ class AutoPilot():
         pitch = self.api.get_standard_property_value('PLANE_PITCH_DEGREES')
         trim = self.api.get_standard_property_value('ELEVATOR_TRIM_POSITION')
 
-        if alt is None or speed is None or vspeed is None or pitch is None or trim is None:
+        if (alt and speed and vspeed and pitch and trim) is None:
             return
 
         # Used by both VSH and ALT code
         self.vs_limits = {
             "vs_lim_1": 100,
-            "vs_lim_2": 300,
             "vs_max": speed * 8,
         }
 
@@ -146,78 +152,126 @@ class AutoPilot():
         below 30% because we'll pick up so much speed we'll be
         tearing the airplane apart. Which would be bad.
         """
-        self.run_altitude_hold(alt, speed, vspeed, pitch, trim)
+        # self.run_altitude_hold(alt, speed, vspeed, pitch, trim)
 
         self.prev_vspeed = vspeed
 
     def run_vertical_speed_hold(self, alt, speed, vspeed, pitch, trim) -> None:
-        target = self.modes[VERTICAL_SPEED_HOLD]
-        diff = target - vspeed
         dVS = vspeed - self.prev_vspeed
-        min_max = constrain_map(speed, 50, 150, 0.0003, 0.001)
-        correct = constrain_map(diff, -100, 100, -min_max, min_max)
-
-        [vs_lim_1, vs_lim_2, vs_max] = [
-            value for key, value in self.vs_limits.items()]
         dVS_max = constrain(abs(vspeed)/10, 1, 10)
+        min_max = constrain_map(speed, 50, 150, 0.0003, 0.001)
+        correct = constrain_map(vspeed, -100, 100, min_max, -min_max)
 
-        print(f'vspeed: {vspeed}')
-        print(f'diff: {diff}')
-        print(f'dVS: {dVS}')
-        print(f'trim: {trim}')
-        print(f'pitch: {pitch}')
-        print(f'correct: {correct}')
+        # print(f'vspeed: {vspeed}')
+        # print(f'diff: {diff}')
+        # print(f'dVS: {dVS}')
+        # print(f'trim: {trim}')
+        # print(f'pitch: {pitch}')
+        # print(f'correct: {correct}')
 
-        if diff > 0 and dVS < dVS_max and vspeed < vs_lim_1:
-            # print('pitch up')
-            if correct > 0 and correct < min_max/5:
-                correct = min_max/5
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim + correct)
-        elif diff > 0 and (dVS > 3*dVS_max or vspeed > vs_lim_2):
-            # print('pitching up way too fast')
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
-        elif diff > 0 and (dVS < 2*dVS_max or vspeed > vs_lim_1):
-            # print('pitching up too fast')
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
-        elif diff < 0 and dVS > -dVS_max and vspeed > -vs_lim_1:
-            # print('pitch down')
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim + correct)
-        elif diff < 0 and (dVS < 3 * -dVS_max or vspeed < -vs_lim_2):
-            # print('pitching down way too much')
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
-        elif diff < 0 and (dVS < 2 * -dVS_max or vspeed < -vs_lim_1):
-            # print('pitching down too much')
-            self.api.set_property_value(
-                'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
-        else:
-            # print('do nothing?')
-            pass
+        if vspeed < 0:
+            # Do we need to pitch up?
+            if dVS < dVS_max:
+                # print('pitch up')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim + correct)
+            elif dVS > 3*dVS_max:
+                # print('pitching up way too fast')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
+            elif dVS < 2*dVS_max:
+                # print('pitching up too fast')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
+
+        elif vspeed > 0:
+            # Or do we need to pitch down?
+            if dVS > -dVS_max:
+                # print('pitch down')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim + correct)
+            elif dVS < 3 * -dVS_max:
+                # print('pitching down way too much')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.75)
+            elif dVS < 2 * -dVS_max:
+                # print('pitching down too much')
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim - correct * 0.5)
+
+    def set_initial_ALT_trim(self, target):
+        # In order to get us going, we set an initial "reasonable"
+        # trim to immediatley pitch us in the right direction.
+        alt = self.api.get_standard_property_value('INDICATED_ALTITUDE')
+        diff = target - alt
+        trim = self.api.get_standard_property_value('ELEVATOR_TRIM_POSITION')
+        correct = constrain_map(diff, -1000, 1000, -0.02, 0.02)
+        self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
 
     def run_altitude_hold(self, alt, speed, vspeed, pitch, trim) -> None:
-        [vs_lim_1, vs_lim_2, vs_max] = [
-            value for key, value in self.vs_limits.items()]
+        [vs_lim_1, vs_max] = [
+            value for _, value in self.vs_limits.items()]
 
         target = self.modes[ALTITUDE_HOLD]
+        dVS = vspeed - self.prev_vspeed
+        if dVS == 0:
+            dVS = copysign(1, vspeed)
+        alt_diff = target - alt
 
-        if (-0.10 < trim):
-            trim_bump = 0.001
-            alt_diff = target - alt
+        if alt_diff > 0 and trim > 0.18:
+            return self.api.set_property_value('ELEVATOR_TRIM_POSITION', 0.18)
+
+        trim_bump = 0.001
+
+        correct = constrain_map(abs(dVS), 0, 10, 0, trim_bump)
+        print(dVS, alt_diff, trim)
+
+        # Are we going opposite of the intended direction?
+        # if alt_diff > 0 and vspeed > 0 and alt_diff < vspeed:
+        #     # we'll be shooting up through our target, fix that
+        #     correct = constrain_map(vspeed, 0, vs_max, 0, 3 * trim_bump)
+        #     self.api.set_property_value(
+        #         'ELEVATOR_TRIM_POSITION', trim - correct)
+        # elif alt_diff < 0 and vspeed < 0 and alt_diff > vspeed:
+        #     # we'll be shooting down through our target, fix that
+        #     correct = constrain_map(vspeed, -vs_max, 0, -3 * trim_bump, 0)
+        #     self.api.set_property_value(
+        #         'ELEVATOR_TRIM_POSITION', trim + correct)
+        if dVS < 0 and alt_diff > 0:
+            print('why is our vspeed going down?', trim)
+            # Do we need to go up, but VS is dropping? Get that fixed!
+            self.api.set_property_value(
+                'ELEVATOR_TRIM_POSITION', trim + correct)
+        elif dVS > 0 and alt_diff < 0:
+            print('why is our vspeed going up?', trim)
+            # Do we need to go down, but VS is rising? Again, fix please O_o
+            self.api.set_property_value(
+                'ELEVATOR_TRIM_POSITION', trim - correct)
+
+        # Prevent downward overspeed / upward stall, fast.
+        elif abs(vspeed) > vs_max:
+            if vspeed < 0:
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim + correct)
+            else:
+                self.api.set_property_value(
+                    'ELEVATOR_TRIM_POSITION', trim - correct)
+
+        # We're on a normal trajectory, bump the vspeed as needed
+        elif (vspeed < vs_max and alt_diff > 0) or (vspeed > -vs_max and alt_diff < 0):
+            # we want to go up or down,
             vs_threshold = constrain_map(
                 abs(alt_diff), 50, 500, vs_lim_1, vs_max)
             if abs(vspeed) > vs_max:
                 # print('vspeed's too high! counter trim')
                 correct = 0.5 * \
-                    constrain_map(alt_diff, -1, 1, trim_bump, -trim_bump)
+                    constrain_map(alt_diff, -100, 100, trim_bump, -trim_bump)
                 self.api.set_property_value(
                     'ELEVATOR_TRIM_POSITION', trim + correct)
             elif abs(vspeed) < vs_max and abs(alt_diff) > 1000:
                 # print('maxing out pitch to get near target altitude')
-                correct = constrain_map(alt_diff, -1, 1, -trim_bump, trim_bump)
+                correct = constrain_map(
+                    alt_diff, -100, 100, -trim_bump, trim_bump)
                 self.api.set_property_value(
                     'ELEVATOR_TRIM_POSITION', trim + correct)
             elif abs(vspeed) < vs_threshold and abs(alt_diff) > 10:
@@ -226,3 +280,5 @@ class AutoPilot():
                     alt_diff, -100, 100, -trim_bump, trim_bump)
                 self.api.set_property_value(
                     'ELEVATOR_TRIM_POSITION', trim + correct)
+
+        print(f'correction: {correct}')

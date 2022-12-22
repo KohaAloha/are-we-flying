@@ -21,12 +21,6 @@ class ProxyServer(BaseHTTPRequestHandler):
     def log_request(self, code='-', size='-'):
         return
 
-    def do_HEAD(self):
-        self.set_headers()
-
-    def do_OPTIONS(self):
-        self.set_headers()
-
     def do_GET(self):
         ### print('[GET]: ', self.path)
 
