@@ -46,7 +46,6 @@ class AutoPilot():
         self.lvl_center: float = 0
 
     def schedule_ap_call(self) -> None:
-        # call run function 1 second from now
         Timer(0.5, self.run_auto_pilot, [], {}).start()
 
     def get_state(self) -> Dict[str, any]:
