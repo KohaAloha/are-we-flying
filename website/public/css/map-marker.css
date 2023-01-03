@@ -2,7 +2,9 @@
   --dim: 200px;
   width: var(--dim);
   height: var(--dim);
-  margin-top: calc(10px - var(--dim)/2);
-  margin-left: calc(16px - var(--dim)/2);
+  margin-top: calc(10px - var(--dim) / 2);
+  margin-left: calc(16px - var(--dim) / 2);
   position: absolute;
+  transform-origin: center center;
+  transform: rotate(calc(1deg * var(--true-diff)));
 }

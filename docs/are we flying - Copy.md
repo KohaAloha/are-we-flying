@@ -1,3 +1,0 @@
-# great copy
-
-wow

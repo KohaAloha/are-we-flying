@@ -4,10 +4,15 @@ from math import degrees, pi, copysign
 from simconnection import SimConnection
 
 MSFS_RADIAN = pi / 10
+
 LEVEL_FLIGHT = 'LVL'
 HEADING_MODE = 'HDG'
 VERTICAL_SPEED_HOLD = 'VSH'
 ALTITUDE_HOLD = 'ALT'
+INVERTED_FLIGHT = 'INV'
+
+
+def test(x: any) -> str: return 'bad' if x is None else 'good'
 
 
 def map(v: float, ds: float, de: float, ts: float, te: float) -> float:
@@ -27,10 +32,13 @@ def constrain_map(v: float, ds: float, de: float, ts: float, te: float) -> float
     return constrain(map(v, ds, de, ts, te), ts, te)
 
 
-def get_compass_diff(current: float, target: float) -> float:
+def get_compass_diff(current: float, target: float, direction: float = 1) -> float:
     diff: float = (current - 360) if current > 180 else current
     target: float = target - diff
-    return target if target < 180 else target - 360
+    result: float = target if target < 180 else target - 360
+    if direction > 0:
+        return result
+    return 360 - target if target < 180 else target - 360
 
 
 class AutoPilot():
@@ -42,10 +50,13 @@ class AutoPilot():
             HEADING_MODE: False,  # heading mode
             VERTICAL_SPEED_HOLD: False,  # vertical speed hold
             ALTITUDE_HOLD: False,  # altitude hold
+            INVERTED_FLIGHT: False,  # fly upside down?
         }
         self.lvl_center: float = 0
+        self.inverted: float = 1
 
     def schedule_ap_call(self) -> None:
+        # call run function 1 second from now
         Timer(0.5, self.run_auto_pilot, [], {}).start()
 
     def get_state(self) -> Dict[str, any]:
@@ -65,7 +76,13 @@ class AutoPilot():
                     'AIRSPEED_TRUE')
                 self.prev_vspeed = self.api.get_standard_property_value(
                     'VERTICAL_SPEED')
-                self.vs_max_correction = 0
+        if ap_type == LEVEL_FLIGHT:
+            self.lvl_center = 0
+        if ap_type == INVERTED_FLIGHT:
+            self.inverted = -1 if self.modes[ap_type] else 1
+            self.lvl_center = 0
+            sanity_trim = -0.1 if self.inverted else 0.05
+            self.api.set_property_value('ELEVATOR_TRIM_POSITION', sanity_trim)
         return self.modes[ap_type]
 
     def set_target(self, ap_type: str, value: float) -> float:
@@ -85,21 +102,34 @@ class AutoPilot():
         return self.autopilot_enabled
 
     def run_auto_pilot(self) -> None:
+        if not self.autopilot_enabled:
+            return
+
+        self.schedule_ap_call()
+
+        running = self.api.get_property_value('SIM_RUNNING')
+        if running is None or running < 3:
+            return
+
         speed: float = self.api.get_standard_property_value('AIRSPEED_TRUE')
         bank: float = self.api.get_standard_property_value(
             'PLANE_BANK_DEGREES')
+        turn_rate: float = self.api.get_standard_property_value(
+            'TURN_INDICATOR_RATE')
         heading: float = self.api.get_standard_property_value(
             'PLANE_HEADING_DEGREES_MAGNETIC')
         alt: float = self.api.get_standard_property_value('INDICATED_ALTITUDE')
         vspeed: float = self.api.get_standard_property_value('VERTICAL_SPEED')
         trim: float = self.api.get_standard_property_value(
             'ELEVATOR_TRIM_POSITION')
+        # a_trim: float = self.api.get_standard_property_value(
+        #     'AILERON_TRIM_PCT')
 
-        def test(x: any) -> str: return 'bad' if x is None else 'good'
-        if (speed and bank and heading and alt and vspeed and trim) is None:
+        if (speed and bank and turn_rate and heading and alt and vspeed and trim) is None:
             report = ', '.join([
                 f'speed: {test(speed)}',
                 f'bank: {test(bank)}',
+                f'turn rate: {test(turn_rate)}',
                 f'heading: {test(heading)}',
                 f'alt: {test(alt)}',
                 f'vspeed: {test(vspeed)}',
@@ -107,27 +137,31 @@ class AutoPilot():
             ])
             return print(report)
 
-        # print(f'{round(speed,1)}\t{round(bank,1)}\t{round(heading,1)}\t{round(alt,0)}\t{round(vspeed,1)}\t{round(trim,5)}')
-
-        if self.autopilot_enabled is False:
-            return
         if self.modes[LEVEL_FLIGHT]:
-            self.fly_level(speed, bank, heading)
+            self.fly_level(bank, turn_rate, heading)
         if self.modes[VERTICAL_SPEED_HOLD]:
             self.hold_vertical_speed(alt, speed, vspeed, trim)
-        self.schedule_ap_call()
 
-    def fly_level(self, speed: float, bank: float, heading: float) -> None:
-        bank = degrees(bank)
+    def fly_level(self, bank: float, turn_rate: float, heading: float) -> None:
+        factor = self.inverted
+        center = 0 if factor == 1 else pi
+        bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
         self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
 
         if self.modes[HEADING_MODE]:
             heading = degrees(heading)
             target = self.modes[HEADING_MODE]
             hdiff = get_compass_diff(heading, target)
-            max_bump = map(speed, 50, 150, 1.2, 2)
-            self.lvl_center += constrain_map(hdiff, -10,
-                                             10, -max_bump, max_bump)
+            turn_limit = constrain_map(abs(hdiff), 0, 10, 0.01, 0.03)
+            bump = constrain_map(hdiff, -20, 20, -5, 5)
+            bump = bump if abs(bump) > 1 else copysign(1, hdiff)
+            if (hdiff < 0 and turn_rate > -turn_limit) or (hdiff > 0 and turn_rate < turn_limit):
+                self.lvl_center += bump
+
+            # Do we need to prevent our upside-down plane trying to fall out of the sky?
+            if factor == -1:
+                if (hdiff < 0 and turn_rate > turn_limit) or (hdiff > 0 and turn_rate < -turn_limit):
+                    self.lvl_center -= 1.1 * bump
 
         self.api.set_property_value(
             'AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
@@ -135,52 +169,51 @@ class AutoPilot():
     def hold_vertical_speed(self, alt: float, speed: float, vspeed: float, trim: float) -> None:
         alt_target = self.modes[ALTITUDE_HOLD]
         alt_diff = (alt_target - alt) if alt_target else 0
-        vs_target = 0
+
+        factor = self.inverted
+        lower_limit = 5 * speed
+        upper_limit = 10 * speed
+        vs_max = upper_limit if factor * alt_diff >= 0 else lower_limit
+
+        # if we're running altitude hold, set a vertical speed target that'll get us there.
+        vs_target = 0 if alt_diff == 0 else constrain_map(
+            alt_diff, -500, 500, -vs_max, vs_max)
         vs_diff = vs_target - vspeed
-        vs_max = 10 * speed - self.vs_max_correction if alt_diff >= 0 else 5 * speed
+
         dvs = vspeed - self.prev_vspeed
         dvs_max = speed / 2
-        alt_hold_limit = 20
         correct = 0
 
-        dv = speed - self.prev_speed
-        if alt_diff > 0 and (dv < 0) and abs(vs_diff) > 200:
-            self.vs_max_correction -= constrain_map(dv, -1, 0, 300, 0)
-            vs_max = max(vs_max + self.vs_max_correction, 100)
-            # print(dv, self.vs_max_correction, vs_max)
+        # Base our step size on how fast this plane is going.
+        step = factor * map(speed, 50, 200, MSFS_RADIAN/200, MSFS_RADIAN/120)
 
-        # We make our step size contingent on how fast this plane (can) go(es)
-        step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 100)
+        vstep = constrain_map(vs_diff, -vs_max, vs_max, -step, step)
+        vstep = vstep if abs(vstep) > 0.00001 else copysign(0.00001, vstep)
+        correct += vstep
 
-        # we want both vspeed *and* dVS to become zero.
-        correct += constrain_map(vs_diff, -vs_max, vs_max, -step, step)
-        correct += constrain_map(dvs, -dvs_max, dvs_max, step, -step)
+        dvstep = constrain_map(dvs, -dvs_max, dvs_max, step / 2, -step / 2)
+        dvstep = dvstep if abs(dvstep) > 0.000005 else copysign(0.000005, dvstep)
+        correct += dvstep
 
-        # special handling for when we're close to our target
-        if abs(vs_diff) < 200 and abs(alt_diff) < alt_hold_limit:
-            self.vs_max_correction = 0
-            vs_correct = constrain_map(vs_diff, -200, 200, -step / 4, step / 4)
-            if abs(vs_correct) > 0.0003:
-                correct += copysign(0.0003, vs_correct)
-            else:
-                correct += vs_correct
-                correct += constrain_map(dvs, -20, 20, step / 9.99, -step / 10)
+        if (vs_diff < 0 and dvs > dvs_max) or (vs_diff > 0 and dvs < -dvs_max):
+            correct += constrain_map(dvs, -dvs_max, dvs_max, step, -step)
 
-        # "omg, stop, what are you doing??" protection
-        if (vspeed > 2 * vs_max and dvs > 0) or (vspeed < -2 * vs_max and dvs < 0):
-            limit = 10 * vs_max
-            kick = 4 * step
-            correct += constrain_map(vspeed, -limit, limit, kick, -kick)
+        if (vs_target < -5 and vspeed > 0 and vspeed < 100):
+            print("got the fuck down")
+            correct += constrain_map(vspeed, -100, 100, step/10, -step/10)
+        if (vs_target > 5 and vspeed < 0 and vspeed > -100):
+            print("got the fuck up")
+            correct += constrain_map(vspeed, -100, 100, step/10, -step/10)
 
-        # Same trick as for heading: nudge us up or down if we need to be at a specific altitude
-        if alt_diff != 0:
-            alt_correct = constrain_map(alt_diff, -200, 200, -step, step)
-            correct += alt_correct
-            # Do we need an extra kick, though?
-            if alt_diff > 20 and vspeed < -20:
-                correct += alt_correct
-            elif alt_diff < -20 and vspeed > 20:
-                correct += alt_correct
+
+        print(vs_target, vs_diff, vspeed, dvs, vs_max, dvs_max, vstep, dvstep)
+
+        # "omg wtf?" protection
+        protection_steps = [2, 4, 6]
+        for i in protection_steps:
+            if (vspeed > i * vs_max and dvs > 0) or (vspeed < -i * vs_max and dvs < 0):
+                print(f'wtf, {vspeed} exceeds {vs_max} by {i}x')
+                correct += constrain_map(vspeed, -1, 1, step / 4, -step / 4)
 
         self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
         self.prev_vspeed = vspeed

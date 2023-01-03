@@ -12,7 +12,7 @@ import { MapMarker } from "./map-marker.js";
 import { setupGraph } from "./svg-graph.js";
 
 let L; // leaflet
-const { abs, sqrt, max } = Math;
+const { abs, cos, sin, sqrt, max } = Math;
 let paused = false;
 let graph;
 
@@ -45,6 +45,7 @@ const FLIGHT_PROPS = [
   "PLANE_ALT_ABOVE_GROUND",
   "PLANE_BANK_DEGREES",
   "PLANE_HEADING_DEGREES_MAGNETIC",
+  "PLANE_HEADING_DEGREES_TRUE",
   "PLANE_LATITUDE",
   "PLANE_LONGITUDE",
   "PLANE_PITCH_DEGREES",
@@ -58,6 +59,7 @@ export class Plane {
   constructor(map, location, heading) {
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
+    this.autopilot = new Autopilot();
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
@@ -186,7 +188,6 @@ export class Plane {
 
     Questions.modelLoaded(this.state.title);
     this.monitor.muteAll(...MODEL_PROPS);
-    this.autopilot = new Autopilot();
     this.startPolling();
     this.waitForEngines();
   }
@@ -248,6 +249,7 @@ export class Plane {
       airBorn:
         data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
       heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
+      trueHeading: deg(data.PLANE_HEADING_DEGREES_TRUE),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       trim: data.ELEVATOR_TRIM_POSITION,
       bank: deg(data.PLANE_BANK_DEGREES),
@@ -291,12 +293,14 @@ export class Plane {
     this.lat = lat;
     this.long = long;
 
-    const { airBorn, bank, pitch, trim, heading } = this.orientation;
+    const { airBorn, bank, pitch, trim, heading, trueHeading } =
+      this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
-    st.setProperty(`--deg`, heading | 0);
+    st.setProperty(`--deg`, trueHeading | 0);
     st.setProperty(`--speed`, speed | 0);
+    st.setProperty(`--true-diff`, (trueHeading - heading) | 0);
 
     let altitude =
       (galt | 0) === 0 ? `${alt | 0}'` : `${palt | 0}' (${alt | 0}')`;
@@ -312,6 +316,7 @@ export class Plane {
     graph.addValue(`vspeed`, vspeed);
     graph.addValue(`ground`, galt);
 
+    this.autopilot.followTerrain(lat, long, trueHeading);
     this.lastUpdate = now;
   }
 }

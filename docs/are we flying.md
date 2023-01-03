@@ -1,7 +1,9 @@
 # Flying Planes with Python and JavaScript
 
 <figure style="width: 40%; margin: auto; margin-bottom: 1em;" >
-  <img src="python-flying-airplane.png" alt="A python trying to fly an airplane"/>
+  <a href="python-flying-airplane.png" target="_blank">
+    <img src="python-flying-airplane.png" alt="A python trying to fly an airplane"/>
+  </a>      
   <figcaption style="font-style: italic; text-align: center;">Flying planes with Python, you say?</figcaption>
 </figure>
 
@@ -10,9 +12,12 @@ To allay any concerns: this will not be actually running Python or JavaScript so
 While we're not doing that (today), we _are_ going to write an autopilot for planes that don't have one, as well as planes that do have one but that are just a 1950's chore to work with, like the one in my favourite real-life plane, the [DeHavilland DHC-2 "Beaver"](https://en.wikipedia.org/wiki/De_Havilland_Canada_DHC-2_Beaver), originally made by DeHavilland but these days made by [Viking Air](https://www.vikingair.com/viking-aircraft/dhc-2-beaver). Specifically, the float plane version, which flies between [Vancouver](https://www.openstreetmap.org/relation/2218280) and Eastern [Vancouver Island](https://www.openstreetmap.org/relation/2249770) and locations dotted around the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885)). I don't have a pilot's license, but the nice thing about tiny flights is that you regularly get to sit in the copilot seat, and enjoy beautiful British Columbia from only 300m up.
 
 <figure style="width: 40%; margin: auto; margin-bottom: 1em;" >
-  <img src="ha-flights.png" alt="Local floatplane routes"/>
+  <a href="https://harbourair.com/flight-info/flight/locations" target="_blank">
+    <img src="ha-flights.png" alt="Local floatplane routes"/>
+  </a>
   <figcaption style="font-style: italic; text-align: center;">In case anyone is visiting Vancouver...</figcaption>
 </figure>
+
 
 But back to Python and JavaScript: MSFS comes with an SDK called the [SimConnect SDK](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_SDK.htm) that lets people write addons for the game using C, C++, or languages with .NET support, and so of course folks have been writing connectors in those languages to "proxy" the SimConnect calls to officially unsupported languages like Go, Node, Python, etc. And so, of course, my first thought was "cool, I can write an express server that connects to MSFS?" Except the reality is that: no, at least not directly. The `node-simconnect` package is rather incomplete, and so instead we reach for the next best thing: [python-simconnect](https://pypi.org/project/SimConnect/). We now need two languages, but they're both fairly easy to work with so why not.
 
@@ -157,7 +162,59 @@ And a trivial JS file:
 // look at all this empty space! O_O
 ```
 
-We'll fill in the rest as we go along.
+We'll fill in the rest as we go along. But we do need a server to use this web page, because while you _can_ just load an .html file directly in the browser, anything network related (including certain relative file loads) just flat out won't work properly so never use `file:///`, always load web pages from a url.
+
+## Setting up a simple web server
+
+There's a ton of choices here, because every programming language under the sun has a way to set up a web server. The absolute simplest is to run `python -m http.server` in the same directory as your webpage, and presto, you have a web server running on http://localhost:8080! We're not doing that though, because we want to server up content _and_ proxy any API calls to our python server. 
+
+***"Why would we do this?"***
+
+That's a good question: in order for our python server to work with MSFS, we want to have that run on our computer. But we almost certainly don't want to be running a web server on our own computer once we're ready to actually put this online, and we don't want other people to be able to just look up our IP address in their browser because our webpage is trying to talk directly to  our little python server. We only want people to be able to see the IP address of the web server, and then have the web server talk to our own computer "server side", meaning that the only thing that knows our IP address is a server we control, not some random internet user's browser. Much more secure!
+
+To that effect, we're going to set up a simple Node.js [express server](https://expressjs.com/), mostly because that has an almost trivial way to set up the proxying we need:
+
+```javascript
+import express from "express";
+import proxy from "express-http-proxy";
+
+const app = express();
+const WEB_SERVER_PORT = 3000;
+const API_SERVER_URL = `http://localhost:8080`;
+
+// Some housekeeping: turn off any and all caching
+app.disable("view cache");
+app.set("etag", false);
+app.use((_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
+// Then, make sure html, css, and js all get served with the correct mime type:
+app.use(
+  express.static("public", {
+    setHeaders: (res, path, stat) => {
+      let contentType = `application/octet-stream`;
+      if (path.endsWith(`.js`)) contentType = "application/javascript";
+      else if (path.endsWith(`.css`)) contentType = "text/css";
+      else if (path.endsWith(`.html`)) contentType = "text/html";
+      res.setHeader("Content-Type", contentType);
+    },
+  })
+);
+
+// Proxy GET and POST requests to the `/api` route directly to our python server instead:
+app.post(`/api`, proxy(API_SERVER_URL));
+app.get(`/api`, proxy(API_SERVER_URL));
+
+// ...and redirect the root URL to index.html, a common trick used by most server software
+app.get(`/`, (_req, res) => res.redirect(`/index.html`));
+
+// Then with all that: start up the server!
+app.listen(WEB_SERVER_PORT, () => console.log(`Server listening on http://localhost:${WEB_SERVER_PORT}`));
+```
+
+
 
 ### Are we flying?
 
@@ -170,7 +227,10 @@ We'll need to check a few things:
 3. Are we "playing" instead of navigating the menus?
 4. If all the above are true, what are the various bits of flight information, like speed, altitude, etc.?
 
-**_(image of the above flowchart)_**
+<figure style="width: 90%; margin: auto; margin-bottom: 1em;" >
+  <img src="flow.png" alt="A simple flow chart"/>
+  <figcaption style="font-style: italic; text-align: center;"></figcaption>
+</figure>
 
 We'll update our page a little with those states:
 
@@ -178,6 +238,8 @@ We'll update our page a little with those states:
 <ul id="questions">
   <li>is the API server running? <span id="api-running">not yet</span></li>
   <li>is MSFS running? <span id="msfs-running">not yet</span></li>
+  <li>are we in-game? <span id="in-game">not yet</span></li>
+  <li>are we flying? <span id="flying">not yet</span></li>
 </ul>
 ```
 
@@ -190,8 +252,13 @@ function getAPI(...propNames) {
   return fetch(`${API_URL}/?get=${propNames.join(`,`)}`).then(r => r.json());
 }
 
+function find(qs) {
+  return document.querySelector(qs);
+}
+
 function checkForServer() {
   fetch(`${API_URL}`).then(() =>
+    find(`.api-running`).textContent = `yes!`;
     checkForMSFS()
   ).catch(() =>
     setTimeout(checkForServer, 1000));
@@ -200,9 +267,10 @@ function checkForServer() {
 async function checkForMSFS() {
   const connected = await fetch(`${API_URL}/connected`);
   if (connected === true) {
-  checkForPlaying();
+    find(`.msfs-running`).textContent = `yes!`;
+    checkForPlaying();
   } else {
-  setTimeout(checkForMSFS, 1000);
+    setTimeout(checkForMSFS, 1000);
   }
 }
 
@@ -222,7 +290,10 @@ So let's query the python server for that variable!
 ```javascript
 async function checkForPlaying() {
   const { SIM_RUNNING: runFlag } = await getAPI(`SIM_RUNNING`);
-  if (runFlag >= 3) waitForEngines();
+  if (runFlag >= 3) {
+    find(`.in-game`).textContent = `yes!`;
+    waitForEngines();
+  }
   else setTimeout(checkForPlaying, 1000);
 }
 ```
@@ -250,10 +321,14 @@ async function waitForEngines() {
   const data = await getAPI(...ENGINE_DATA);
   if (data.ENGINE_TYPE === 2) {
     // this is the "this plane has no engines" value!
+    find(`.flying`).textContent = `yes!`;      
     return startMonitoringFlightData();
   }
   const enginesRunning = [1,2,3,4].some(id => data[`ENG_COMBUSTION:${id}`]));
-  if (enginesRunning) startMonitoringFlightData();
+  if (enginesRunning) {
+    find(`.flying`).textContent = `yes!`;      
+      startMonitoringFlightData();
+  }
   else setTimeout(waitForEngines, 1000);
 }
 ```
@@ -288,21 +363,21 @@ async function startMonitoringFlightData() {
 async function update(data) {
   // Get our orientation information
   const orientation = {
-  heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
-  pitch: deg(data.PLANE_PITCH_DEGREES),
-  bank: deg(data.PLANE_BANK_DEGREES),
+    heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
+    pitch: deg(data.PLANE_PITCH_DEGREES),
+    bank: deg(data.PLANE_BANK_DEGREES),
   };
 
   // And our flight details
   const details = {
-  lat: data.PLANE_LATITUDE,
-  long: data.PLANE_LONGITUDE,
-  airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
-  speed: data.AIRSPEED TRUE,
-  vspeed: data.VERTICAL_SPEED,
-  alt: data.INDICATED_ALTITUDE,
-  palt: data.PLANE_ALT_ABOVE_GROUND,
-  galt: data.GROUND_ALTITUDE,
+    lat: data.PLANE_LATITUDE,
+    long: data.PLANE_LONGITUDE,
+    airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
+    speed: data.AIRSPEED TRUE,
+    vspeed: data.VERTICAL_SPEED,
+    alt: data.INDICATED_ALTITUDE,
+    palt: data.PLANE_ALT_ABOVE_GROUND,
+    galt: data.GROUND_ALTITUDE,
   };
 
   doCoolThingsWithOurData(orientation, details);
@@ -313,17 +388,17 @@ We can now start writing whatever we like in our `doCoolThingsWithOurData(vector
 
 ### What's the plane doing, where?
 
-In order to make sure we know what our autopilot will be doing (remember, that was our original intention!) let's draw our plane on a map, and plot some of the flight data in a graph, to give us some insight into what's happening:
+In order to make sure we know what our autopilot will be doing (remember, that was our original intention!) let's draw our plane on a map using the [Leaflet](https://leafletjs.com/) library and plot some of the flight data in a graph, to give us some insight into what's happening:
 
 ```javascript
-// We'll be using Leaflet, a free mapping library, which creates a gloabl "L" object.
+// Leaflet creates a global "L" object to work with.
 const DUNCAN_AIRPORT = [48.756669, -123.711434];
 const map = L.map("map").setView(DUNCAN_AIRPORT, 15);
 
 L.tileLayer(
   `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, {
   maxZoom: 19,
-  attribution: `© <a href="https://www.openstreetmap.org/copyright">OSM</a>`,
+  attribution: `© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>`,
   }
 ).addTo(map);
 
@@ -343,9 +418,15 @@ function doCoolThingsWithOurData(orientation, details) {
 
 With that, we have a map that shows our plane, and when we're flying, updates our plane location and makes sure to center the map on its new location.
 
-**_(image of leaflet map with plane icon on it)_**
+<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
+  <a href="duncan-bad.png" target="_blank">
+    <img src="duncan-bad.png" alt="Duncan airport (DUQ/CAM3), BC, Canada"/>
+  </a>
+  <figcaption style="font-style: italic; text-align: center;">This is not ideal...</figcaption>
+</figure>
 
-But... it will look wrong pretty much all the time because it won't be turned in the right direction, so let's fix that with some CSS:
+
+But it will look wrong pretty much all the time because the plane isn't facing the right direction, so let's fix that with some CSS:
 
 ```css
 #plane-icon {
@@ -375,9 +456,15 @@ function doCoolThingsWithOurData(orientation, details) {
 }
 ````
 
-Now our plane will not just be pinned in the right place, but it'll also turn to face the right direction.
+Now our plane will not just be pinned in the right place, but it'll also facing the right direction:
 
-**_(image of leaflet map with plane icon on it, pointing in the right direction)_**
+<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
+  <a href="duncan.png" target="_blank">
+    <img src="duncan.png" alt="Duncan airport (DUQ/CAM3), BC, Canada"/>
+  </a>
+  <figcaption style="font-style: italic; text-align: center;">Waiting for takeoff at Duncan airport!</figcaption>
+</figure>
+
 
 That just leaves graphing some flight information every time the `doCoolThingsWithOurData` function runs. The easiest plotting framework is actually built right into HTML: SVG. All we need to do is track `<path>` elements that we add new values to every time there's new data. Rather than spend time on how to write that code, I'm just going to drop [this link](https://gist.github.com/Pomax/de7707ae17c76caae4dabf7806dbd816) here, which is our entire grapher in <200 lines of code. Mixing that in:
 
@@ -421,7 +508,13 @@ async function doCoolThingsWithOurData(vector, orientation) {
 
 And there we go:
 
-**_(image of flight data graph)_**
+<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
+  <a href="graphing.png" target="_blank">
+    <img src="graphing.png" alt="A plot of in-progress flight data"/>
+  </a>
+  <figcaption style="font-style: italic; text-align: center;">So much information...</figcaption>
+</figure>
+
 
 We're now finally ready to not just write our autopilot, but also see what it's doing, which is crucially important to understanding what your code's doing. Or doing wrong... O_O
 
@@ -446,10 +539,9 @@ def do_GET(self):
 
   # Is our python-based autopilot running?
   if '/autopilot' in self.path:
-  data = json.dumps(auto_pilot.get_state())
+    data = json.dumps(auto_pilot.get_state())
 
   ...
-
 
 def do_POST(self):
   ...
@@ -467,10 +559,10 @@ def do_POST(self):
     ap_type = query['type'][0]
     ap_target = query['target'][0] if 'target' in query else None
     if ap_target is not None:
-    value  = float(ap_target) if ap_target != 'false' else None
-    ap_state = auto_pilot.set_target(ap_type, value)
+      value  = float(ap_target) if ap_target != 'false' else None
+      ap_state = auto_pilot.set_target(ap_type, value)
     else:
-    ap_state = auto_pilot.toggle(ap_type)
+      ap_state = auto_pilot.toggle(ap_type)
     result = {'AP_TYPE': ap_type, 'AP_STATE': ap_state}
   return self.wfile.write(json.dumps(result).encode('utf-8'))
 
@@ -517,7 +609,7 @@ class Autopilot:
   def __init__(self):
   self.lvl_center = 0
 
-  def fly_level(self, speed, bank, heading):
+def fly_level(self, speed, bank, heading):
   bank = degrees(bank)
   self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
   self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
@@ -525,10 +617,10 @@ class Autopilot:
 
 So what are we doing here?
 
-- First, we get the amount we're tilting left or right, which in airplane terminology is its **bank**,
+- First, we get the amount we're tilting left or right, which in aeroplane terminology is its **bank**.
 - Next, we determine by how much to shift our "center of gravity". We turn the bank value into degrees (mostly for code cosmetics reasons) and then we scale the value down, so that numbers in the interval [-5,5] now sit in the internval [-2,2] instead. For instance, -5 becomes -2, -2.5 becomes -1, 0 stays 0, etc. However, we also _constrain_ the values so that anything less than -5 still maps to -2, and anything greater than 5 still maps to 2.
 - We update our variable that records the "center of gravity" and then,
-- we tell MSFS to update the actual airplane control value for aileron trim, by setting it to the average of the _opposite_ of the current bank value (the bank value and the trim values use opposite signs for the same direction), and our center of gravity. (The 180 comes from dividing the average of our bank and center of gravity, `(bank + center)/2`, by 90 degrees)
+- we tell MSFS to update the actual aeroplane control value for aileron trim, by setting it to the average of the _opposite_ of the current bank value (the bank value and the trim values use opposite signs for the same direction), and our center of gravity. (The 180 comes from dividing the average of our bank and center of gravity, `(bank + center)/2`, by 90 degrees)
 
 And that's it, level hold implemented! There's... not a lot to do. We can tweak the `constrain_map` inputs so that we add smaller or larger shifts at each step, with the tradeoff being that the larger the step, the more likely we are to overshoot our correction, leading to the plane to "bob and weave" for a while before it's finally flying level, and we can fiddle with that 180, changing it to larger or smaller values, but that's kind of it.
 
@@ -541,24 +633,26 @@ In order to achieve vertical hold, rather than adjusting the aileron trim" based
 So, let's write some code:
 
 ```python
+from math import pi
+MSFS_RADIAN = pi / 10
+
+...
+
 def hold_vertical_speed(self, alt, speed, vspeed, trim):
   vs_target = 0
   vs_diff = vs_target - vspeed
-  vs_max = 10 * speed
+  vs_max = 10 * speed - self.vs_max_correction if alt_diff >= 0 else 5 * speed
   dvs = vspeed - self.prev_vspeed
   dvs_max = speed / 2
-
-  # Let's start with an optimistic 0 as the correction for our pitch trim:
   correct = 0
 
-  # Then, we make our step size contingent on how fast this plane is going:
-  step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 100)
+  # Base our step size on how fast this plane is going.
+  step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 150)
 
-  # Then, as mentioend, we want both VS *and* acceleration (dVS) to become zero.
+  # our target is a vspeed difference *and* vspeed acceleration of zero.
   correct += constrain_map(vs_diff, -vs_max, vs_max, -step, step)
-  correct += constrain_map(dvs, -dvs_max, dvs_max, step, -step)
+  correct += constrain_map(dvs, -dvs_max, dvs_max, step / 2, -step / 2)
 
-  # Apply the correction, and store our VS so we can determine dVS next time
   self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
   self.prev_vspeed = vspeed
 ```
@@ -570,32 +664,6 @@ The first part basically sets up the various values we'll need: our vertical hol
 
 Both of these impart a correction based on how close to their maximum permitted values they are. The closer to the max, the stronger the correction, with the correction capped to `step` because if we didn't limit that, we'd be able to shoot off to the moon just to compensate for being too low. Or worse, plow into the ground because we were climbing a bit too much.
 
-However, _there is a problem with this code_: it works, but because of the competition between VS and dVS, it kind of lingers on non-zero values either above or below zero for much longer than we want.
-
-**_(image of VS plotted over time)_**
-
-In order to deal with that, we're going to add an extra bit of code:
-
-```python
-correct += constrain_map(vs_diff, -vs_max, vs_max, -step, step)
-correct += constrain_map(dvs, -dvs_max, dvs_max, step, -step)
-
-# special handling for when we're close to our target
-if abs(vs_diff) < 200 and abs(alt_diff) < alt_hold_limit:
-  vs_correct = constrain_map(vs_diff, -200, 200, -step / 4, step / 4)
-  if abs(vs_correct) > 0.0003:
-    correct += copysign(0.0003, vs_correct)
-  else:
-    correct += vs_correct
-    correct += constrain_map(dvs, -20, 20, step / 10, -step / 10)
-
-# Apply the correction, and store our VS so we can determine dVS next time
-self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
-self.prev_vspeed = vspeed
-```
-
-This new code kicks when we're close to the target (either above or below), and adds an extra correction based on both vertical speed and acceleration, but with more weight to vertical speed, with an extra rule that makes sure that there is always a vertical speed correction, and that if that correction would normally be so small as to offer no counter to the acceleration correction, we instead process a small vertical speed correcetion _without_ running the acceleration correction.
-
 And... that's it. Again, not a lot of code, but it does what we need it to, updating our elevator trim so that we end up flying in a straight line. Combined with level mode, we're basically done! This is an autopilot!
 
 There are a few more "magic numbers" that we can fiddle with here, and you totally should, but aside from fiddling and twiddling, this is it. We implemented an old school autopilot.
@@ -605,7 +673,7 @@ There are a few more "magic numbers" that we can fiddle with here, and you total
 Of course, an autopilot that doesn't actually fly in the direction you need it to is kind of... silly? So let's add **heading mode**, where we say which compass direction we want to fly in, and have it make sure we end up flying in that direction. For this, we're going to update our level mode code with just a few more lines:
 
 ```python
-def fly_level(self, speed: float, bank: float, heading: float) -> None:
+def fly_level(self, bank, turn_rate, heading):
   bank = degrees(bank)
   self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
 
@@ -613,19 +681,19 @@ def fly_level(self, speed: float, bank: float, heading: float) -> None:
     heading = degrees(heading)
     target = self.modes[HEADING_MODE]
     hdiff = get_compass_diff(heading, target)
-    max_bump = map(speed, 50, 150, 1.2, 2)
-    self.lvl_center += constrain_map(hdiff, -10, 10, -max_bump, max_bump)
+    turn_limit = constrain_map(abs(hdiff), 0, 10, 0.01, 0.03)
+    bump = constrain_map(hdiff, -20, 20, -5, 5)
+    bump = bump if abs(bump) > 1 else copysign(1, hdiff)    
+
+    if (hdiff < 0 and turn_rate > -turn_limit) or (hdiff > 0 and turn_rate < turn_limit):
+      self.lvl_center += bump
 
   self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
 ```
 
-These few lines is all we need:
+A few more lines, but they're mostly "value preparation" code:
 
-1. get our heading in degrees,
-
-2. get the target heading as entered into the autopilot by the user
-
-3. get the angular difference, for which we need a special function because compass angles wrap around, and there are two possible turns, one shorter than the other. We always want the shortest one:
+1. get our heading in degrees, and our target heading, then get the difference between those two. We need a special function for this, because compass angles wrap around, and there are two possible turns we can make, one shorter than the other. We always want the shortest one:
 
    ```python
    def get_compass_diff(current, target):
@@ -634,9 +702,9 @@ These few lines is all we need:
      return target if target < 180 else target - 360
    ```
 
-4. Determine how fast of a turn to allow. For slow planes, turning too fast makes them fall out of the sky, and for fast planes, turning too slowly is really annoying, so for planes going 50 knots (which for most planes is "fall out of the sky" levels of slow, but covers things like ultralight/microlight aircraft) we'll set a maximum correction of 1.2 degrees per update, and for planes going 150 knots we'll set a maximum correction of 2 degrees per update. That doesn't sound like a big difference, but trust me: it is. This is one of those cases where you should absolutely play with the value to see what the effect is. Changing that 2 to a 3, for example, will guaranteed knock your airplane out of the sky =)
+2. Set a limit on the permissible turn rate (think "how many degrees per second"), and the size by which we're going to bump the trim (`turn_rate` being equivalent to the SimConnect `TURN_INDICATOR_RATE` variable, measured in radians)
 
-5. Finally, we update the center of gravity we're using to fly the plane level, and this is the trick: while for level flight we want "the perfect center of gravity", for turning towards a specific heading, we actually want to kick that center out of alignment a bit, to force the plane to tilt. We've basically written some code that _messes with our original code_ just enough to make the airplane turn for just as long as we need it to.
+3. Then the plane bank a little by shifting our center of gravity "off-center" by the bump amount and set a new aileron trim by mixing our current bank and center of gravity offset, which pushes us in a "less wrong" direction, eventually taking us all the way to our desired heading.
 
 And that's it, again: not a lot of code, but we now have a heading mode and we can tell our plane to fly where _we_ want it to, rather than where _it_ wants to =)
 
@@ -647,92 +715,136 @@ Which brings us to the last mode: altitude hold. And if you're thinking "are we 
 Just like how heading mode works by preventing the leveling code from actually fully leveling the plane until it's pointing in the right direction, we're going to implement altitude hold as a bit of code that prevents vertical hold from reaching zero, instead staying on a value range that either makes the plane climb or descend, until we reach our desired altitude, at which point we let vertical hold do its thing and keep us there.
 
 ```python
-# special handling for when we're close to our target
-if abs(vs_diff) < 200 and abs(alt_diff) < alt_hold_limit:
-  correct += constrain_map(vs_diff, -200, 200, -step / 4, step / 4)
-  correct += constrain_map(dvs, -20, 20, step / 9.99, -step / 10)
+def hold_vertical_speed(self, alt, speed, vspeed, trim):
+  ...
+  alt_target = self.modes[ALTITUDE_HOLD]
+  alt_diff = (alt_target - alt) if alt_target else 0
 
-alt_target = self.modes[ALTITUDE_HOLD]
-alt_diff = (alt_target - alt) if alt_target else 0
-alt_hold_limit = 20
+  step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 150)
 
-# Nudge us up or down if we need to be at a specific altitude
-if alt_diff != 0:
-  correct += constrain_map(alt_diff, -200, 200, -step, step)
+  # if we're running altitude hold, set vertical speed target that'll get us there.
+  if alt_diff != 0:
+    vs_diff = constrain_map(alt_diff, -200, 200, -1000, 1000) - vspeed
 
-self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
-self.prev_vspeed = vspeed
-```
-
-Again, a few lines of code and we're good. Or, almost: by using the same `step` that VS and dVS use, it's possible for altitude hold to merely cancel out what VS and dVS are doing, so we want two more lines:
-
-```python
-if alt_diff != 0:
-  alt_correct = constrain_map(alt_diff, -200, 200, -step, step)
-  correct += alt_correct
-  # If we still have a fair bit of distance to cover,
-  # but vspeed is already close to zero, "double trim":
-  if alt_diff > 20 and vspeed < -20:
-    correct += alt_correct
-  elif alt_diff < -20 and vspeed > 20:
-    correct += alt_correct
-```
-
-And that'll do it. Now we'll keep climbing or descending until we reach our desired altitude.
-
-Which means we're done!
-
-### Fixing altitude hold so it doesn't kill us
-
-Well... almost. Because while heading mode has a low potential for harm, altitude hold mode can absolutely still kill us by trying to climb or descend too fast. Yes, we have `vs_max` but if we're dropping fast, just a small trim adjustment isn't going to stop us from plummeting to the ground: we might need far more feet to correct for the dive than there are between us and the ground. If we ever even get to the ground, because airplanes are ridiculously fragile and while we're plummeting, we're picking up speed, and at some point that speed's going to rip the plane apart. Or, equally bad, we might try to trim up too much and pitch the plane so steeply that we lose lift, and _then_ we plummet to the ground and the previous two scenarios will still happen but now preceded by a stall.
-
-I think you'll agree none of that is desirable autopilot behaviour, so let's make sure it at least can't kill us (too easily) by adding some "over-vspeed" protection before considering our autopilot done. First, let's add some code that can detect whether our plane's speed is dropping, and ues that to decrease `vs_max`, in an attempt to prevent us from trimming too much.
-
-```python
-alt_target = self.modes[ALTITUDE_HOLD]
-...
-vs_max = 10 * speed - self.vs_max_correction if alt_diff >= 0 else 5 * speed
-...
-dv = speed - self.prev_speed
-
-if alt_diff > 0 and (dv < 0) and abs(vs_diff) > 200:
-  self.vs_max_correction -= constrain_map(dv, -1, 0, 300, 0)
-  vs_max = max(vs_max + self.vs_max_correction, 100)
-
-...
-
-# special handling for when we're close to our target
-if abs(vs_diff) < 200 and abs(alt_diff) < alt_hold_limit:
-   self.vs_max_correction = 0
-   ...
-```
-
-First, we update our vs_max so that if we're descending, we do so at a safe speed. Then, we introduce a new `prev_speed` that set similar to `prev_vspeed` so that we can see whether or not our air speed's dropping. If it does, and we're climbing, start ramping down the maximum allowed vertical speed. And of course, make sure to reset our corrective value to 0 when we're it's safe to do so.
-
-Then, let's also put in some protection for when someone bumps the trim wheel and accidentally sends us into a death pitch. This won't help _much_ and it's entirely likely that we'd have to disengage the autopilot and manually trim ourselves back to safety, but it's better than nothing:
-
-```python
-# special handling for when we're close to our target
-...
-
-# "omg, stop, what are you doing??" protection
-if (vspeed > 2 * vs_max and dvs > 0) or (vspeed < -2 * vs_max and dvs < 0):
-  limit = 10 * vs_max
-  kick = 4 * step
-  correct += constrain_map(vspeed, -limit, limit, kick, -kick)
-
-# Same trick as for heading: nudge us up or down if we need to be at a specific altitude
-if alt_diff != 0:
-  alt_correct = constrain_map(alt_diff, -200, 200, -step, step)
   ...
 ```
 
-This is the one time where we're going to hyper aggressively trim with (relatively) huge values in order to get this plane back under control. If our vspeed is far past its maximum permitted value, and its acceleration is still pushing it further, we add a kick in the opposite direction that is proportional to how much beyond acceptable levels things have gotten.
+And that'll do it. Now we'll keep climbing or descending until we reach our desired altitude. Which means we're done!
+
+### Fixing altitude hold so it doesn't kill us
+
+Well... almost. Because while heading mode has a low potential for harm, altitude hold mode can absolutely still kill us by trying to climb or descend too fast. Yes, we have `vs_max` but if we're dropping fast, just a small trim adjustment isn't going to stop us from plummeting to the ground: we might need far more feet to correct for the dive than there are between us and the ground. If we ever even get to the ground, because aeroplanes are ridiculously fragile and while we're plummeting, we're picking up speed, and at some point that speed's going to rip the plane apart. Or, equally bad, we might try to trim up too much and pitch the plane so steeply that we lose lift, and _then_ we plummet to the ground and the previous two scenarios will still happen but now preceded by a stall.
+
+I think you'll agree none of that is desirable autopilot behaviour, so let's make sure it at least can't kill us (too easily) by adding some "over-vspeed" protection:
+
+```python
+  ...
+  correct += constrain_map(dvs, -dvs_max, dvs_max, step / 2, -step / 2)
+
+  # "omg what is happening??" protection
+  protection_steps = [2, 4, 6]
+  for i in protection_steps:
+    if (vspeed > i * vs_max and dvs > 0) or (vspeed < -i * vs_max and dvs < 0):
+      correct += constrain_map(vspeed, -1, 1, step / 2, -step / 2)
+
+  ...
+```
+
+If our vspeed is far past its maximum permitted value, and the acceleration is still pushing it further, we add several kicks in the opposite direction that is proportional to how much beyond acceptable levels things have gotten.
+
+And that's it, we're done! For real this time!
 
 ## We have an autopilot!
 
-And it's not particularly great, but it works (for the most part) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do!
+Now, it's not a *great* autopilot, but it works (for the most part) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do! In fact, mix in some [Open-Elevation](https://open-elevation.com/) based on "current location" and "location 10 nautical miles ahead of me", get the elevation map for the next 10 miles, and then pick a safe elevation to hold, now we have terrain "hugging"... there's a *lot* of fun left to be had!
 
-Me, I'm going to fly a [Top Rudder](https://www.toprudderaircraft.com/103sologallery) around New Zealand a bit, then maybe hang out in my backyard on Vancouver Island in a [DHC-2 Beaver](https://www.vikingair.com/viking-aircraft/dhc-2-beaver) with floats, and then maybe do some exploratory flying in a [Kodiak 100](https://kodiak.aero/kodiak/).
+## Bonus round: Level and Altitude Hold... upside down??
+
+In fact, let's have some more fun, because sure, having a normal autopilot is nice, but ever heard of an autopilot that'll keep you flying upside down? Neither have I: let's make one! Of course, most aeroplanes won't be able to pull that stunt off, but what if you're in an actual stunt plane? Like the fictional [Gee Bee R3 Special](https://flightsim.to/product/gee-bee-r3-special)?
+
+<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
+  <a href="gee-bee-r3.png" target="_blank">
+      <img src="gee-bee-r3.png" alt="A Gee Bee R3 Special"/>
+  </a>
+  <figcaption style="font-style: italic; text-align: center;">Not for the faint of heart...</figcaption>
+</figure>
+
+This thing will go naught to ludicrous speed near instantly, and will happily fly upside down for much longer than you can. So, let's make some magic happen. First off we're going to add a special case to the `toggle()` code, so that if we toggle `INV` (for "invert") we set some new values:
+
+```python
+def toggle(self, ap_type: str) -> bool:
+  ...
+  if ap_type == INVERTED_FLIGHT:
+    self.inverted = -1 if self.modes[ap_type] else 1
+    self.lvl_center = 0
+    sanity_trim = -0.1 if self.inverted else 0.05
+    self.api.set_property_value('ELEVATOR_TRIM_POSITION', sanity_trim)
+  ...
+```
+
+We use the `inverted` value not as a true or false, but as a multiplier factor for other values: if we're flying inverted, some things will need to be multiplied by -1 to make sure the plane corrects in the right direction. There's also a `sanity_trim` that is used to flip our pitch trim down by *a lot*, because once we're upside down, our nose needs to point down, not up. If we don't do this, it's going to take our plane, going at breakneck speed, probably longer to correct for pitch than it will take it to hit the ground =)
+
+With that set up, let's update our Level Hold:
+
+```python
+def fly_level(self, bank: float, turn_rate: float, a_trim: float, heading: float) -> None:
+  factor = self.inverted
+  center = 0 if factor == 1 else pi
+  bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
+  self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
+
+  if self.modes[HEADING_MODE]:
+    ...
+
+    if factor == -1:
+      if (hdiff < 0 and turn_rate > turn_limit) or (hdiff > 0 and turn_rate < -turn_limit):
+        self.lvl_center -= 1.1 * bump
+
+  self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
+```
+
+That's a bit more code than before, but when we're upside down things get a little more complicated because flying upside down means we're flying in an unstable configuration: if we bank right side up, the plane will slowly try to right itself because of how it's carving a path through the air, always returning to a stable flight path. However, when we're upside down, the plane will do the exact same thing... except now that'll constantly try to flip it over, and we'd prefer it didn't.
+
+First off, we have a new way to calculate our bank angle, because we now need that angle relevative to "being upside down" rather than "right side up". And while right side up has an ideal bank angle of zero, flying inverted has _two_ ideal angls: -π and π. Both represent a 180 degree turn relative to 0, one left, one right, with -π = π for the purpose of bank angle. To deal with that, we use two separate calculations to find how far we're banking relative to "down" based on whether the plane's banked left or right.
+
+With that taken care of, we can now mostly rely on the code we already had, but we need some additional code to put in that protection against the plane desperately trying to _stop_ flying inverted: if the plane's trying to tip too much, we simply kick it back a little more than it tried to tip.
+
+Then we'll also need to update Altitude Hold:
+
+```
+def hold_vertical_speed(self, alt: float, speed: float, vspeed: float, trim: float) -> None:
+  ...
+  
+  factor = self.inverted
+  lower_limit = 5 * speed
+  upper_limit = 10 * speed - self.vs_max_correction
+  vs_max = upper_limit if factor * alt_diff >= 0 else lower_limit
+
+  ...
+  correct = 0
+
+  # Base our step size on how fast this plane is going.
+  step = factor * map(speed, 50, 150, MSFS_RADIAN/200, MSFS_RADIAN/100)
+  
+```
+
+And that's it, we just need to make sure that we set a sensible `vs_max` that, when we're flying normally, allows for faster ascent than descent, but when we're flying upside down, flips that. Then, we also make sure to flip the sign on our corrective step, so that "trimming up" actually trims us down, and "trimming down" actually trims us up. Because we're upside down. 
+
+And that's it, we have an inverted autopilot. How crazy is that??
+
+<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
+  <a href="gee-bee-r3-inverted.png" target="_blank">
+    <img src="gee-bee-r3-inverted.png" alt="The Gee Bee R3 Special flying upside down"/>
+  </a>
+  <figcaption style="font-style: italic; text-align: center;">The Gee Bee R3 doing what it does best</figcaption>
+</figure>
+
+# And that's it for now
+
+So this has been quite a lot of fun: we learned a bit about how an autopilot works, made a full autopilot, and then went even further and made it do something that doesn't even exist in the real world. Mission accomplished, and then some, I'd say.
+
+If you made it this far in this write-up, thank you for reading, and I hope you have a great day!
+
+As for me, I'm going to fly a [Top Rudder](https://www.toprudderaircraft.com/103sologallery) around New Zealand a bit, then maybe hang out in my backyard on Vancouver Island in a [DHC-2 Beaver](https://www.vikingair.com/viking-aircraft/dhc-2-beaver) with floats, and then maybe do some exploratory flying in a [Kodiak 100](https://kodiak.aero/kodiak/).
 
 Say hi if you see me!

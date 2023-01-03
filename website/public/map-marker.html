@@ -2,33 +2,20 @@
   <link rel="stylesheet" href="css/map-marker.css" />
 
   <div class="compass">
-    <svg
-      id="map-marker"
-      width="100%"
-      height="100%"
-      viewBox="0 0 200 200"
-      style="background: none; border: none"
-    >
+    <svg id="map-marker" width="100%" height="100%" viewBox="0 0 200 200" style="background: none; border: none">
       <style>
         svg#map-marker path {
           transform-origin: 50% 50%;
         }
+
         svg#map-marker g path {
           stroke: black;
         }
       </style>
-      <path
-        d="M 190 100 L 200 100"
-        stroke="red"
-        style="transform: rotate(calc(-90deg + 1deg * var(--deg)))"
-        stroke-width="4"
-      ></path>
+      <path d="M 190 100 L 200 100" stroke="red"
+        style="transform: rotate(calc(-90deg + 1deg * (var(--deg) - var(--true-diff))))" stroke-width="4"></path>
       <g>
-        <path
-          d="M 190 100 L 200 100"
-          style="transform: rotate(-90deg)"
-          stroke-width="3"
-        />
+        <path d="M 190 100 L 200 100" style="transform: rotate(-90deg)" stroke-width="3" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-80deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-70deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-60deg)" />
@@ -37,11 +24,7 @@
         <path d="M 190 100 L 200 100" style="transform: rotate(-30deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-20deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-10deg)" />
-        <path
-          d="M 190 100 L 200 100"
-          style="transform: rotate(0deg)"
-          stroke-width="3"
-        />
+        <path d="M 190 100 L 200 100" style="transform: rotate(0deg)" stroke-width="3" />
         <path d="M 190 100 L 200 100" style="transform: rotate(10deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(20deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(30deg)" />
@@ -50,11 +33,7 @@
         <path d="M 190 100 L 200 100" style="transform: rotate(60deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(70deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(80deg)" />
-        <path
-          d="M 190 100 L 200 100"
-          style="transform: rotate(90deg)"
-          stroke-width="3"
-        />
+        <path d="M 190 100 L 200 100" style="transform: rotate(90deg)" stroke-width="3" />
         <path d="M 190 100 L 200 100" style="transform: rotate(100deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(110deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(120deg)" />
@@ -63,11 +42,7 @@
         <path d="M 190 100 L 200 100" style="transform: rotate(150deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(160deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(170deg)" />
-        <path
-          d="M 190 100 L 200 100"
-          style="transform: rotate(180deg)"
-          stroke-width="3"
-        />
+        <path d="M 190 100 L 200 100" style="transform: rotate(180deg)" stroke-width="3" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-170deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-160deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-150deg)" />
@@ -76,8 +51,14 @@
         <path d="M 190 100 L 200 100" style="transform: rotate(-120deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-110deg)" />
         <path d="M 190 100 L 200 100" style="transform: rotate(-100deg)" />
+        <text text-anchor="middle" fill="black" x="100" y="30">360</text>
+        <text text-anchor="right" fill="black" x="170" y="103">90</text>
+        <text text-anchor="middle" fill="black" x="100" y="180">180</text>
+        <text text-anchor="left" fill="black" x="15" y="103">270</text>
       </g>
-        <path fill-rule="evenodd" d="M 0 100 A 100 100 180 1 0 200 100 A 100 100 180 1 0 0 100 M 10 100 A 90 90 -180 1 0 190 100 A 90 90 -180 1 0 10 100" fill="#F5C3" stroke="black"/>
+      <path fill-rule="evenodd"
+        d="M 0 100 A 100 100 180 1 0 200 100 A 100 100 180 1 0 0 100 M 10 100 A 90 90 -180 1 0 190 100 A 90 90 -180 1 0 10 100"
+        fill="#F5C3" stroke="black" />
       </g>
     </svg>
   </div>

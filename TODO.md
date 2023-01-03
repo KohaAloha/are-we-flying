@@ -1,4 +1,3 @@
-- Add the webpage controls for working with the python autopilot
-- Add terrain awareness, so we can fly a route with automatic ALT selection based on the next 15NM of terrain?
 - Fix heading oscillation when setting HDG to "current +/- 180"
-- It looks like AP stops working once we hit a `None` value... which is very curious because it should just ignore it and move on to the next call schedule
+- move terrain-follow from JS to python?
+- fix predictive terrain follow, it's using the wrong angle for heading and keeps crashing us into mountain sides

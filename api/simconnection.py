@@ -42,6 +42,12 @@ class SimConnection():
             print(f'No simulator found, retrying in {seconds}s')
             Timer(seconds, self.connect, [], {}).start()
 
+    def check_connection(self):
+        # THIS IS REALLY DUMB, but I don't know how to check for a dead DLL connection...
+        # And SimConnect will not notify you of a "broken pipe" so the only way to make
+        # sure we don't just... stop working... is to create a new SimConnect every so often.
+        self.sm = SimConnect(self)
+
     def get_property_value(self, name):
         # Special property for determining whether the user's playing the sim or not
         if name == "SIM_RUNNING":
