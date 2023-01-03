@@ -154,7 +154,7 @@ class AutoPilot():
             hdiff = get_compass_diff(heading, target)
             turn_limit = constrain_map(abs(hdiff), 0, 10, 0.01, 0.03)
             bump = constrain_map(hdiff, -20, 20, -5, 5)
-            bump = bump if abs(bump) > 1 else copysign(1, hdiff)
+            bump = bump if abs(bump) > 0.25 else copysign(0.25, hdiff)
             if (hdiff < 0 and turn_rate > -turn_limit) or (hdiff > 0 and turn_rate < turn_limit):
                 self.lvl_center += bump
 
