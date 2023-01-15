@@ -12,7 +12,7 @@ import { MapMarker } from "./map-marker.js";
 import { setupGraph } from "./svg-graph.js";
 
 let L; // leaflet
-const { abs, cos, sin, sqrt, max } = Math;
+const { abs, cos, sin, sqrt, max, PI: π } = Math;
 let paused = false;
 let graph;
 
@@ -36,6 +36,7 @@ const ENGINE_PROPS = [
 ];
 
 const FLIGHT_PROPS = [
+  "AILERON_TRIM_PCT",
   "AIRSPEED_TRUE",
   "AUTOPILOT_MASTER",
   "ELEVATOR_TRIM_POSITION",
@@ -217,13 +218,43 @@ export class Plane {
   async startPolling() {
     if (!graph) {
       graph = setupGraph(document.body, 600, 400);
-      graph.start();
-      graph.setProperties(`ground`, {
-        fill: {
-          baseline: 0,
-          color: `saddlebrown`,
+      graph.setProperties(
+        {
+          label: `ground`,
+          min: 0,
+          max: 5000,
+          fill: {
+            baseline: 0,
+            color: `saddlebrown`,
+          },
         },
-      });
+        {
+          label: `altitude`,
+          min: 0,
+          max: 5000,
+        },
+        {
+          label: `trim`,
+          min: -50,
+          max: 50,
+        },
+        {
+          label: `atrim`,
+          min: -50,
+          max: 50,
+        },
+        {
+          label: `bank`,
+          min: -40,
+          max: 40,
+        },
+        {
+          label: `vspeed`,
+          min: -1500,
+          max: 1500,
+        }
+      );
+      graph.start();
     }
     this.monitor.registerAll(FLIGHT_PROPS, 1000);
   }
@@ -252,6 +283,7 @@ export class Plane {
       trueHeading: deg(data.PLANE_HEADING_DEGREES_TRUE),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       trim: data.ELEVATOR_TRIM_POSITION,
+      aTrim: data.AILERON_TRIM_PCT,
       bank: deg(data.PLANE_BANK_DEGREES),
       yaw: deg(
         data.PLANE_HEADING_DEGREES_MAGNETIC - data.GPS_GROUND_TRUE_TRACK
@@ -293,7 +325,7 @@ export class Plane {
     this.lat = lat;
     this.long = long;
 
-    const { airBorn, bank, pitch, trim, heading, trueHeading } =
+    const { airBorn, bank, pitch, trim, aTrim, heading, trueHeading } =
       this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
@@ -310,8 +342,10 @@ export class Plane {
     Gyro.setPitchBank(pitch, bank);
 
     graph.addValue(`altitude`, alt);
-    graph.addValue(`pitch`, pitch);
-    graph.addValue(`trim`, trim);
+    // graph.addValue(`pitch`, pitch);
+    const trimToDegree = (v) => (v / (Math.PI / 10)) * 90;
+    graph.addValue(`trim`, trimToDegree(trim));
+    graph.addValue(`atrim`, aTrim * 100);
     graph.addValue(`bank`, bank);
     graph.addValue(`vspeed`, vspeed);
     graph.addValue(`ground`, galt);

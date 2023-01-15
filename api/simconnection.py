@@ -9,6 +9,10 @@ class SimConnection():
         self.sim_events = []
         self.sim_running = 0
         self.reset_position = False
+        self.auto_pilot = False
+
+    def set_auto_pilot(self, ap):
+        self.auto_pilot = ap
 
     def handle_id_event(self, eventId):
         self.sim_events.append(eventId)
@@ -46,7 +50,9 @@ class SimConnection():
         # THIS IS REALLY DUMB, but I don't know how to check for a dead DLL connection...
         # And SimConnect will not notify you of a "broken pipe" so the only way to make
         # sure we don't just... stop working... is to create a new SimConnect every so often.
-        self.sm = SimConnect(self)
+
+        # self.sm = SimConnect(self)
+        pass
 
     def get_property_value(self, name):
         # Special property for determining whether the user's playing the sim or not
@@ -56,6 +62,10 @@ class SimConnection():
             if running:
                 return 3 + (camera) / 10
             return 0
+
+        # Special property for getting the plane's "trim anchor"
+        if name == "TRIM_ANCHOR":
+            return list(self.auto_pilot.anchor)
 
         # Special property for determining whether the user's paused on the menu
         if name == "SIM_PAUSED":

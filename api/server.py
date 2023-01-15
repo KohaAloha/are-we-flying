@@ -1,7 +1,8 @@
 import os
 import json
-from threading import Timer
 from autopilot import AutoPilot
+# from importlib import reload
+from threading import Timer
 from simconnection import SimConnection
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -36,7 +37,7 @@ class ProxyServer(BaseHTTPRequestHandler):
 
         # Is our python-based autopilot running?
         if '/autopilot' in self.path:
-            data = json.dumps(auto_pilot.get_state())
+            data = json.dumps(auto_pilot.get_auto_pilot_parameters())
 
         # Handle API calls
         else:
@@ -51,15 +52,23 @@ class ProxyServer(BaseHTTPRequestHandler):
 
     def do_POST(self):
         print('[POST]: ', self.path)
+        global auto_pilot, sim_connection
 
         query = urlparse(self.path).query
         self.set_headers()
 
-        # is this an autopilot instructions?
+        # # is this an autopilot instructions?
+        # if '/autopilot/reload' in self.path:
+        #     global auto_pilot
+        #     autopilot = reload(autopilot)
+        #     from autopilot import AutoPilot
+        #     old_auto_pilot = auto_pilot
+        #     auto_pilot = AutoPilot(sim_connection, old_auto_pilot)
+        #     old_auto_pilot.autopilot_enabled = False
+
         if '/autopilot' in self.path:
-            global auto_pilot
             if query == '':
-                ap_state = auto_pilot.toggle_autopilot()
+                ap_state = auto_pilot.toggle_auto_pilot()
                 result = {'AP_STATE': ap_state}
             else:
                 query = parse_qs(query)
@@ -107,6 +116,7 @@ def run():
     sim_connection.connect()
     auto_pilot = AutoPilot(sim_connection)
 
+
     # "Ping" the sim connection every minute (which right now just
     # builds a new SimConnect instead of doing something smart)
     Timer(60, ensure_connection, [], {}).start()
@@ -120,7 +130,9 @@ def run():
         webServer.server_close()
         print('Server stopped')
         os._exit(1)
-
+    except OSError as error:
+        print(error)
+        print("I'm going to exit now, but at least hopefully we can debug?")
 
 if __name__ == "__main__":
     run()

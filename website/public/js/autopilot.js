@@ -10,9 +10,11 @@ const autopilotURL = `http://localhost:8080/autopilot`;
 export class Autopilot {
   constructor() {
     const ap = document.querySelector(`#autopilot`);
+    this.reload = ap.querySelector(`button.reload`);
     this.master = ap.querySelector(`button.ap`);
     this.altitude = ap.querySelector(`input.altitude`);
     this.heading = ap.querySelector(`input.heading`);
+    this.vsh = ap.querySelector(`button.vsh`);
     this.alt = ap.querySelector(`button.alt`);
     this.terrain = ap.querySelector(`button.terrain`);
     this.lvl = ap.querySelector(`button.level`);
@@ -27,6 +29,7 @@ export class Autopilot {
     this.altitude.value = state.ALT ?? this.alt.value;
     this.heading.value = state.HDG ?? this.heading.value;
     this.alt.classList[state.VSH ? `add` : `remove`](`active`);
+    this.alt.classList[state.ALT ? `add` : `remove`](`active`);
     this.lvl.classList[state.LVL ? `add` : `remove`](`active`);
     this.hdg.classList[state.HDG ? `add` : `remove`](`active`);
 
@@ -39,11 +42,51 @@ export class Autopilot {
     });
 
     this.master.addEventListener(`click`, () => this.toggleAutoPilot());
+    this.vsh.addEventListener(`click`, () => this.toggleVSH());
     this.alt.addEventListener(`click`, () => this.toggleALT());
     this.terrain.addEventListener(`click`, () => this.toggleTER());
     this.lvl.addEventListener(`click`, () => this.toggleLVL());
     this.inv.addEventListener(`click`, () => this.toggleINV());
     this.hdg.addEventListener(`click`, () => this.toggleHDG());
+
+    this.reload.addEventListener(`click`, () => {
+      fetch(`${autopilotURL}/reload`, { method: `POST` });
+    });
+
+    // check if we need to override the autopilot from URL
+    setTimeout(() => this.toggleFromURL(), 2000);
+  }
+
+  /**
+   * This should run a checkState first
+   */
+  async toggleFromURL() {
+    const state = await this.checkAP();
+
+    const { search } = window.location;
+    const params = new URLSearchParams(search);
+
+    const ap = params.get(`ap`);
+    if (ap && !state.AP_STATE) {
+      this.toggleAutoPilot();
+    }
+
+    const vsh = params.get(`vsh`);
+    if (vsh) {
+      this.toggleVSH();
+    }
+
+    const alt = params.get(`alt`);
+    if (alt) {
+      this.altitude.value = alt;
+      if (state.ALT !== false) this.setALT(alt);
+      else this.toggleALT();
+    }
+
+    const lvl = params.get(`lvl`);
+    if (lvl && !state.LVL) {
+      this.toggleLVL();
+    }
   }
 
   async checkAP() {
@@ -57,8 +100,15 @@ export class Autopilot {
     this.master.classList.toggle(`active`);
   }
 
-  async toggleALT() {
+  async toggleVSH() {
     await fetch(`${autopilotURL}?type=VSH`, { method: `POST` });
+    this.vsh.classList.toggle(`active`);
+  }
+
+  async toggleALT() {
+    if (!this.vsh.classList.contains(`active`)) {
+      await this.toggleVSH();
+    }
     this.alt.classList.toggle(`active`);
     if (this.alt.classList.contains(`active`)) {
       this.setALT(this.altitude.value);

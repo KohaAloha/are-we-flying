@@ -31,8 +31,8 @@ class Series {
     this.max = 0;
   }
 
-  setProperties({ fill }) {
-    if (fill) {
+  setProperties({ fill = false, min = false, max = false }) {
+    if (fill !== false) {
       const { baseline, color } = fill;
       this.baseline = baseline;
       this.filled = color === `none` || color === `transparent` ? false : true;
@@ -40,6 +40,8 @@ class Series {
       if (this.filled) set(this.path, `stroke`, color);
       this.color = color;
     }
+    this.min = min ?? this.min;
+    this.max = max ?? this.max;
   }
 
   addValue(x, y) {
@@ -62,9 +64,13 @@ class Series {
   updateMinMax(value) {
     if (value < this.min) this.min = value;
     if (value > this.max) this.max = value;
-
-    // TODO: now we need to fit our own min/max into the SVG's min/max
-    this.g.setAttribute(`transform`, `scale(1,1)`);
+    const { min, max, height } = this;
+    const h2 = height / 2;
+    const span = Math.max(abs(max), abs(min)) / h2;
+    const scale = 1 / span;
+    this.path.setAttribute(`stroke-width`, Math.min(1, 2 * span));
+    this.g.setAttribute(`transform`, `scale(1, ${scale})`);
+    this.g.setAttribute(`data-minmax`, `${min},${max}`);
   }
 }
 
@@ -114,27 +120,15 @@ class SVGChart {
     this.started = false;
   }
 
-  updateViewBox(x) {
-    if (x > this.width) {
-      this.svg.setAttribute(
-        `viewBox`,
-        `${x - this.width} ${this.min} ${this.width} ${this.height}`
-      );
-      const rows = this.legend.children.length;
-      this.legend.setAttribute(
-        `transform`,
-        `translate(${x - this.width}, 0)`
-      );
-    }
-  }
-
-  setProperties(label, props) {
-    this.getSeries(label).setProperties(props);
-    const { fill } = props;
-    if (fill) {
-      const patch = document.querySelector(`g.${label} rect`);
-      patch.setAttribute(`fill`, fill.color);
-    }
+  setProperties(...entries) {
+    entries.forEach(({ label, ...props }) => {
+      this.getSeries(label).setProperties(props);
+      const { fill } = props;
+      if (fill) {
+        const patch = document.querySelector(`g.${label} rect`);
+        patch.setAttribute(`fill`, fill.color);
+      }
+    });
   }
 
   getSeries(label) {
@@ -181,13 +175,24 @@ class SVGChart {
     const series = this.getSeries(label);
     const x = (Date.now() - this.startTime) / 1000;
     let y = value;
-    if (abs(value) > 1) {
-      let s = value < 0 ? -1 : 1;
-      // fit 0 to 100,000 feet in the same graph
-      y = (s * ((log10(abs(value)) / 5) * this.height)) / 2;
-    }
-    series.addValue(x, y.toFixed(2));
+    // if (abs(value) > 1) {
+    //   let s = value < 0 ? -1 : 1;
+    //   // fit 0 to 100,000 feet in the same graph
+    //   y = (s * ((log10(abs(value)) / 5) * this.height)) / 2;
+    // }
+    series.addValue(x, y.toFixed(5));
     this.updateViewBox(x);
+  }
+
+  updateViewBox(x) {
+    if (x > this.width) {
+      this.svg.setAttribute(
+        `viewBox`,
+        `${x - this.width} ${this.min} ${this.width} ${this.height}`
+      );
+      const rows = this.legend.children.length;
+      this.legend.setAttribute(`transform`, `translate(${x - this.width}, 0)`);
+    }
   }
 }
 

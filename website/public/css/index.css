@@ -86,7 +86,7 @@ input#title {
 }
 
 #plane-icon div.alt {
-  transform: translate(0, min(-4em, calc(-4em - 1em * var(--altitude))));
+  transform: translate(0, min(-2em, calc(-3.5em - 1em * var(--altitude))));
 }
 
 #plane-icon div.alt.ground {
@@ -94,7 +94,7 @@ input#title {
 }
 
 #plane-icon div.speed {
-  transform: rotate(calc(90deg + 1deg * var(--deg))) translate(5em, 0)
+  transform: rotate(calc(90deg + 1deg * var(--deg))) translate(3.5em, 0)
   rotate(calc(-90deg - 1deg * var(--deg)));
 }
 
