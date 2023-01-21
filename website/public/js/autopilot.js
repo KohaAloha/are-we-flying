@@ -87,6 +87,13 @@ export class Autopilot {
     if (lvl && !state.LVL) {
       this.toggleLVL();
     }
+
+    const hdg = params.get(`hdg`);
+    if (hdg) {
+      this.heading.value = hdg;
+      if (state.HDG !== false) this.setHDG(hdg);
+      else this.toggleHDG();
+    }
   }
 
   async checkAP() {

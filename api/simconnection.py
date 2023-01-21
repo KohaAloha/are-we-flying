@@ -1,4 +1,3 @@
-from threading import Timer
 from time import time
 from SimConnect import *
 
@@ -44,14 +43,8 @@ class SimConnection():
         except ConnectionError:
             seconds = 5.0
             print(f'No simulator found, retrying in {seconds}s')
-            Timer(seconds, self.connect, [], {}).start()
 
     def check_connection(self):
-        # THIS IS REALLY DUMB, but I don't know how to check for a dead DLL connection...
-        # And SimConnect will not notify you of a "broken pipe" so the only way to make
-        # sure we don't just... stop working... is to create a new SimConnect every so often.
-
-        # self.sm = SimConnect(self)
         pass
 
     def get_property_value(self, name):

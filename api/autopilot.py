@@ -1,7 +1,6 @@
 import time
 from typing import Dict, Union
 from threading import Timer
-from math import degrees, pi, copysign, radians
 from simconnection import SimConnection
 from fly_level import fly_level
 from hold_altitude import hold_altitude

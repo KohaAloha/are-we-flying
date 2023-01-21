@@ -18,8 +18,20 @@ def constrain(v: float, m: float, M: float) -> float:
     return M if v > M else m if v < m else v
 
 
-def constrain_map(v: float, ds: float, de: float, ts: float, te: float) -> float:
-    return constrain(map(v, ds, de, ts, te), ts, te)
+def constrain_map(v: float, ds: float, de: float, ts: float, te: float, lm=None, LM=None) -> float:
+    val = constrain(map(v, ds, de, ts, te), ts, te)
+    if lm is None or LM is None:
+        return val
+    mid = (lm + LM) / 2
+    if val < lm:
+        return val
+    if val > LM:
+        return val
+    if val > lm and val <= mid:
+        return lm
+    if val < LM and val >= mid:
+        return LM
+    return val
 
 
 def get_compass_diff(current: float, target: float, direction: float = 1) -> float:
@@ -29,4 +41,3 @@ def get_compass_diff(current: float, target: float, direction: float = 1) -> flo
     if direction > 0:
         return result
     return 360 - target if target < 180 else target - 360
-
