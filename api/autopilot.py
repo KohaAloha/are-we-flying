@@ -7,6 +7,7 @@ from hold_altitude import hold_altitude
 from state import State
 from utils import test
 from vector import Vector
+from math import pi
 
 from constants import (
     LEVEL_FLIGHT,
@@ -75,7 +76,7 @@ class AutoPilot():
             self.prev_bank = self.get('PLANE_BANK_DEGREES')
         if ap_type == INVERTED_FLIGHT:
             self.inverted = -1 if self.modes[ap_type] else 1
-            self.lvl_center = 0
+            # self.anchor.x = ...
             sanity_trim = -0.1 if self.inverted else 0.05
             self.set('ELEVATOR_TRIM_POSITION', sanity_trim)
         return self.modes[ap_type]
@@ -126,9 +127,10 @@ class AutoPilot():
         alt = self.get('INDICATED_ALTITUDE')
         vspeed = self.get('VERTICAL_SPEED')
         trim = self.get('ELEVATOR_TRIM_POSITION')
+        trim_limit = self.get('ELEVATOR_TRIM_UP_LIMIT')
         a_trim = self.get('AILERON_TRIM_PCT')
 
-        if (speed and bank and turn_rate and heading and alt and vspeed and trim and a_trim) is None:
+        if (speed and bank and turn_rate and heading and alt and vspeed and trim and trim_limit and a_trim) is None:
             return print(', '.join([
                 f'speed: {test(speed)}',
                 f'bank: {test(bank)}',
@@ -136,7 +138,8 @@ class AutoPilot():
                 f'heading: {test(heading)}',
                 f'alt: {test(alt)}',
                 f'vspeed: {test(vspeed)}',
-                f'trim: {test(trim)}'
+                f'trim: {test(trim)}',
+                f'limit: {test(trim_limit)}',
             ]))
 
         state = State(
@@ -147,6 +150,7 @@ class AutoPilot():
             turn_rate=turn_rate,
             vertical_speed=vspeed,
             pitch_trim=trim,
+            pitch_trim_limit=trim_limit,
             aileron_trim=a_trim,
             prev_state=self.prev_state,
         )

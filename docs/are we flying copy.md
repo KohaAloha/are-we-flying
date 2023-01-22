@@ -7,7 +7,7 @@
   <figcaption style="font-style: italic; text-align: center;">Flying planes with Python, you say?</figcaption>
 </figure>
 
-To allay any concerns: this will not be actually running Python or JavaScript software in the cockpit of a real aircraft in order to effect automated flight: that would kill people. Instead, we're writing a web page that can control an autopilot running in Python that in turn controls a little virtual aeroplane. And by "little" I actually mean "any aeroplane in [Microsoft Flight Simulator](https://www.flightsimulator.com/)" because as it turns out, MSFS comes with an API that can be used to both query _and set_ values relating from anything as simple as cockpit lights to something as complex as spawning a fleet of aircraft and making them perform formation flights while making their smoke pattern spell out the works of Chaucer in its original middle English.
+To allay any concerns: this will not be actually running Python or JavaScript software in a cockpit of a real aircraft in order to effect automated flight: that would kill people. Instead, we're writing a web page that can control an autopilot running in Python that in turn controls a little virtual aeroplane. And by "little" I actually mean "any aeroplane in [Microsoft Flight Simulator](https://www.flightsimulator.com/)" because as it turns out, MSFS comes with an API that can be used to both query _and set_ values relating from anything as simple as the current airspeed to something as complex as spawning a fleet of aircraft and making them perform formation flights while making their smoke pattern spell out the works of Chaucer in its original middle English.
 
 While we're not doing that (today), we _are_ going to write an autopilot for planes that don't have one, as well as planes that do have one but that are just a 1950's chore to work with, like the one in my favourite real-life plane, the [DeHavilland DHC-2 "Beaver"](https://en.wikipedia.org/wiki/De_Havilland_Canada_DHC-2_Beaver), originally made by DeHavilland but these days made by [Viking Air](https://www.vikingair.com/viking-aircraft/dhc-2-beaver). Specifically, the float plane version, which flies between [Vancouver](https://www.openstreetmap.org/relation/2218280) and Eastern [Vancouver Island](https://www.openstreetmap.org/relation/2249770) and locations dotted around the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885)). I don't have a pilot's license, but the nice thing about tiny flights is that you regularly get to sit in the copilot seat, and enjoy beautiful British Columbia from only 300m up.
 
@@ -207,7 +207,7 @@ app.use(
 app.post(`/api`, proxy(API_SERVER_URL));
 app.get(`/api`, proxy(API_SERVER_URL));
 
-// ...and redirect the root URL to index.html, common to most server software
+// ...and redirect the root URL to index.html, a common trick used by most server software
 app.get(`/`, (_req, res) => res.redirect(`/index.html`));
 
 // Then with all that: start up the server!
@@ -607,164 +607,106 @@ For level mode, this means we're going to simply check "is the plane tilting lef
 ```python
 class Autopilot:
   def __init__(self):
-    self.anchor = Vector(0, 0, 0)
+  self.lvl_center = 0
 
-  def fly_level(self, state):
-    anchor = self.anchor
-    bank = degrees(state.bank_angle)
-    max_bank = 15
-    dBank = state.dBank
-    max_dBank = radians(1)
-    step = radians(1)
-
-    # Push us towards a bank of zero:
-    nudge = constrain_map(bank, -max_bank, max_bank, -step, step)
-    anchor.x += nudge
-    if abs(bank) < 2:
-        # If our bank angle is small, the resulting nudge
-        # will also be quite small, so boost that a little.
-        anchor.x += nudge
-
-    # And then also push us towards a bank acceleration of zero:
-    anchor.x += constrain_map(dBank, -max_dBank, max_dBank, -step/2, step/2)
-
-    auto_pilot.api.set_property_value('AILERON_TRIM_PCT', anchor.x)
+def fly_level(self, speed, bank, heading):
+  bank = degrees(bank)
+  self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
+  self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
 ```
 
 So what are we doing here?
 
-- first off, we're defining our "sky anchor". That's not a real thing it's just a convenient way to model x, y, and z offsets for the purpose of trimming, it's really just a triplet for numerical values. We'll use `anchor.x` for our left/right trimming.
-- Then, we need to implement our wing level code, which we do by solving two problems at once: we want a **bank** angle (the angle of the wings with respect to level flight) of zero _and_ we want a bank acceleration of zero.
-- So, first we correct our bank: if we bank a lot, we want to correct a lot, and if we're banking a little, we want to correct just a little. We're going to, at most, correct the plane by 1 degree, if we're banking more than our `max_bank` value of 15 degrees. Now, because MSFS doesn't actually have a fixed "X degrees means 100% aileron" value that we can consult, we're effectively using a best guess correction that works "well enough" for most planes. It might not work for all of them, but it works for a lot of them.
-- Then, we correct our bank acceleration by trimming opposite to the direction we're accelerating in. However, we trim by less than the bank correction requires, so that bank correction always "wins" from acceleration correction. We don't want a situation where our bank acceleration is zero, but the bank angle is still huge!
-- Finally, we set a new trim value based on our corrections.
+- First, we get the amount we're tilting left or right, which in aeroplane terminology is its **bank**.
+- Next, we determine by how much to shift our "center of gravity". We turn the bank value into degrees (mostly for code cosmetics reasons) and then we scale the value down, so that numbers in the interval [-5,5] now sit in the internval [-2,2] instead. For instance, -5 becomes -2, -2.5 becomes -1, 0 stays 0, etc. However, we also _constrain_ the values so that anything less than -5 still maps to -2, and anything greater than 5 still maps to 2.
+- We update our variable that records the "center of gravity" and then,
+- we tell MSFS to update the actual aeroplane control value for aileron trim, by setting it to the average of the _opposite_ of the current bank value (the bank value and the trim values use opposite signs for the same direction), and our center of gravity. (The 180 comes from dividing the average of our bank and center of gravity, `(bank + center)/2`, by 90 degrees)
 
-And that's it, level hold implemented! There's not a lot to do. Other than tweaking: there are a number of "magic constants" here that we could play with: is 15 degrees the optimal max bank angle? is radians(1) the best reasonable  max bank acceleration value? Is a step of radians(1) reasonable? Should we add the second nudge earlier? Later? Add more nudges? This is where "autopilot tuning" comes in, and you can get lost in it for days or more! (Ask me how I know...)
+And that's it, level hold implemented! There's... not a lot to do. We can tweak the `constrain_map` inputs so that we add smaller or larger shifts at each step, with the tradeoff being that the larger the step, the more likely we are to overshoot our correction, leading to the plane to "bob and weave" for a while before it's finally flying level, and we can fiddle with that 180, changing it to larger or smaller values, but that's kind of it.
 
-But, with values "that work" in place, it turns out that code wise, this was relatively painless, so... what about vertical hold?
+So that was easy! What about vertical hold?
 
 ### Implementing Vertical Hold
 
-In order to achieve vertical hold, rather than adjusting the "aileron trim" to change plane's bank angle, we're going to adjust the "elevator trim" (i.e. our pitch) based on the plane's vertical speed. That is, we're going to look at how fast the plane's moving up or down and try to correct for that by changing how much the plane is pitching forward or backward.
+In order to achieve vertical hold, rather than adjusting the aileron trim" based on the plane's bank angle, we're going to adjust the "elevator trim" (i.e. our pitch) based on the plane's vertical speed. However, rather than just look at the vertical speed, creatively called `VS`, we also want to look at the vertical _acceleration_ because there's some important information there. Ultimately, we want to reach a vertical speed of zero, meaning we're not climbing or descending, with a vertical acceleration of zero, meaning we're also not _about_ to start climbing or descending. The problem is that these are competing end goals: if we reach an acceleration of zero first, our vertical speed won't change anymore, and we'd never reach a VS or zero, so we need to make sure that whatever changes we make based on acceleration are less impactful than the changes we make based on VS.
 
-So, let's write some more code:
+So, let's write some code:
 
 ```python
-def hold_vertical_speed(self, state):
-  anchor = self.anchor
-  VS = state.vertical_speed
-  dVS = state.dVS
+from math import pi
+MSFS_RADIAN = pi / 10
 
-  max_VS = 1000
-  max_dVS = 20
-  max_dVS = 1 + constrain_map(abs(VS), 0, 100, 0, max_dVS - 1)
+...
 
-  # how much should we trim by?
-  trim = state.pitch_trim - anchor.y
-  trim_limit = state.pitch_trim_limit
-  trim_limit = 10 if trim_limit == 0 else trim_limit
-  trim_step = constrain_map(trim_limit, 5, 20, radians(0.001), radians(0.01))
-  kick = 10 * trim_step
+def hold_vertical_speed(self, alt, speed, vspeed, trim):
+  vs_target = 0
+  vs_diff = vs_target - vspeed
+  vs_max = 10 * speed - self.vs_max_correction if alt_diff >= 0 else 5 * speed
+  dvs = vspeed - self.prev_vspeed
+  dvs_max = speed / 2
+  correct = 0
 
-  # Are we accelerating too much? Then we need to pitch in the opposite direction:
-  if dVS < -max_dVS or dVS > max_dVS:
-    anchor.y -= constrain_map(dVS, -10 * max_dVS, 10 * max_dVS, -kick, kick)
+  # Base our step size on how fast this plane is going.
+  step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 150)
 
-  # Also, if we're past safe vertical speeds, bring us back to safe speeds:
-  if (VS < -max_VS and dVS <= 0) or (VS > max_VS and dVS >= 0):
-    anchor.y += constrain_map(VS, -max_VS, max_VS, trim_step, -trim_step)
+  # our target is a vspeed difference *and* vspeed acceleration of zero.
+  correct += constrain_map(vs_diff, -vs_max, vs_max, -step, step)
+  correct += constrain_map(dvs, -dvs_max, dvs_max, step / 2, -step / 2)
 
-  # And then regardless of those two protection measures: nudge us towards
-  # the correct vertical speed.
-  anchor.y -= constrain_map(VS, -1000, 1000, -kick, kick)
-
-  auto_pilot.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + anchor.y)
+  self.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + correct)
+  self.prev_vspeed = vspeed
 ```
 
-First, notice the `trim_limit` value: every aircraft has different pitch trim controls, and since MSFS only lets use set the "trim position" for pitch, we need to know what actual trim values correspond to "setting a maximum trim value". For instance, the [Cessna 310R](https://en.wikipedia.org/wiki/Cessna_310) has a min/max trim of 20, which means if we use trim corrections of 1/1000<sup>th</sup>, we have good control. The [Britten-Norman Islander](https://en.wikipedia.org/wiki/Britten-Norman_BN-2_Islander) has a min/max trim of 6, so if we just blindly used the same values that work for the 310, we'd be applying trim more than three times what it should be... the Islander would basically be wildly pitching up and down instead of converging on a steady vertical speed. Also, some planes don't "officially" have trim, like the [Top Rudder 103Solo](https://www.toprudderaircraft.com/), and so their trim limit is zero... but they can still be trimmed by explicitly setting trim values. So for those planes we just "guess": we set their trim limit to 10 and hope that works. There's not much else we can do.
+The first part basically sets up the various values we'll need: our vertical hold target speed, which is just zero, the difference between our target and our current vertical speed, the maximum vertical speed we consider safe (which is not necessarily going to be true!), our acceleration (named "dvs" for "delta vertical speed"), and the most we want our acceleration to be. We then start with a trim correction of zero, and add two values to that:
 
-So with that out of the way, the vertical hold approach consists of:
+1. the correction based on how far off our vertical speed is from our target, and
+2. the correction based on how far off our acceleration is from zero.
 
-- correcting for any potential acceleration in the wrong direction, and
-- correcting for any potential overspeeding (vertically), then
-- pushing the plane a bit more in the right direction, and if we just keep doing that, eventually we'll end up in a situation where we're flying with "zero" vertical speed.
-
-Of course,  that "zero" is in quotes because the weather is always a factor, but it'll be close enough to zero to keep us mostly flying at the same altitude (but _not_ necessary the altitude at which we turned on vertical hold!)
+Both of these impart a correction based on how close to their maximum permitted values they are. The closer to the max, the stronger the correction, with the correction capped to `step` because if we didn't limit that, we'd be able to shoot off to the moon just to compensate for being too low. Or worse, plow into the ground because we were climbing a bit too much.
 
 And... that's it. Again, not a lot of code, but it does what we need it to, updating our elevator trim so that we end up flying in a straight line. Combined with level mode, we're basically done! This is an autopilot!
 
-There are a few more "magic numbers" that we can fiddle with here, just like before (and you totally should! Just.. not for days) but aside from fiddling and twiddling, this is it. We implemented an old school autopilot.
+There are a few more "magic numbers" that we can fiddle with here, and you totally should, but aside from fiddling and twiddling, this is it. We implemented an old school autopilot.
 
 ### Adding heading mode
 
-Of course, an autopilot that doesn't actually fly in the direction you need it to is kind of... silly? Sure, not falling out of the sky is useful, but it's not as useful as "flying in the direction you actually want to go", so: let's add a **heading mode**, where we say which compass direction we want to fly in, and have it make sure we end up flying in that direction. For this, we're going to update our level mode code with some more code:
+Of course, an autopilot that doesn't actually fly in the direction you need it to is kind of... silly? So let's add **heading mode**, where we say which compass direction we want to fly in, and have it make sure we end up flying in that direction. For this, we're going to update our level mode code with just a few more lines:
 
 ```python
-def fly_level(auto_pilot, state):
-  anchor = auto_pilot.anchor
-  trim = state.aileron_trim
+def fly_level(self, bank, turn_rate, heading):
+  bank = degrees(bank)
+  self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
 
-  bank = degrees(state.bank_angle)
-  dBank = state.dBank
-  target_bank = 0
-  turn_rate = degrees(state.turn_rate)
+  if self.modes[HEADING_MODE]:
+    heading = degrees(heading)
+    target = self.modes[HEADING_MODE]
+    hdiff = get_compass_diff(heading, target)
+    turn_limit = constrain_map(abs(hdiff), 0, 10, 0.01, 0.03)
+    bump = constrain_map(hdiff, -20, 20, -5, 5)
+    bump = bump if abs(bump) > 1 else copysign(1, hdiff)    
 
-  # We need to account for everything from 50kts aircraft like the
-  # Asobo Top Rudder, to the 250kts Gee Bee R3 Special. The faster
-  # the plane, the harder it needs to bank in order to get to a
-  # reasonable rate of turn.
-  max_bank = constrain_map(state.speed, 50, 250, 10, 30)
-  max_dBank = radians(1)
-  max_turn_rate = 3
+    if (hdiff < 0 and turn_rate > -turn_limit) or (hdiff > 0 and turn_rate < turn_limit):
+      self.lvl_center += bump
 
-  step = radians(1)
-  bump = 0
-  diff = 0
-  flight_heading = auto_pilot.modes[HEADING_MODE]
-  h_diff = 0
-
-  # Are we supposed to fly a specific compass heading?
-  if flight_heading:
-    heading = degrees(state.heading)
-    target = flight_heading
-    h_diff = get_compass_diff(heading, target)
-    target_bank = -constrain_map(h_diff, -30, 30, -max_bank, max_bank)
-
-  # Now then: we want a diff==0 and dBank==0, so let's minimize both!
-
-  # First off, what is our banking difference?
-  diff = target_bank - bank
-
-  # correct for non-zero diff first:
-  nudge = -constrain_map(diff, -15, 15, -step, step)
-  bump += nudge
-  if abs(diff) < 2:
-      bump += nudge
-
-  # then correct for non-zero dBank
-  nudge = constrain_map(dBank, -max_dBank, max_dBank, -step/2, step/2)
-  bump += nudge
-
-  # And finally, make sure we're not turning too fast. The closer
-  # to our target we get, the smaller our allowed turn rate should be:
-  if flight_heading:
-    max_turn_rate = constrain_map(abs(h_diff), 0, 10, 0.02, max_turn_rate)
-    if turn_rate < -max_turn_rate or turn_rate > max_turn_rate:
-      overshoot = turn_rate - max_turn_rate
-      nudge = constrain_map(overshoot, -max_turn_rate, max_turn_rate, -step/5, step/5)
-      bump -= nudge
-
-  anchor.x += bump
-  auto_pilot.api.set_property_value('AILERON_TRIM_PCT', anchor.x)
+  self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
 ```
 
-That looks like a lot more code, but it's mostly "setting up values we'll need" and then few lines for the actual heading mode. The most important part to notice is that we're no longer operating directly on our bank angle: instead, we use a "target bank angle": if we set this to our current heading then our target will be "fly straight", i.e. our original level mode, but now we can also set a _different_ heading and make the plane bank based on that. Rather than "flying towards some heading", we're instead making the plane bank on command, where if we're far away from our desired compass heading we tell it to bank a lot, and if we're close, we tell it to bank only a little. 
+A few more lines, but they're mostly "value preparation" code:
 
-Now, again you'll see that we're tailing the bank angle a little: not all planes fly at the same speed, and a very slow plane (like an ultralight) can turn really quickly just by banking a little bit, whereas a big fast airliner like an [Airbus A320Neo](https://en.wikipedia.org/wiki/Airbus_A320neo_family) needs to bank _a lot_ if it wants to fly the same turn. So, we set a maximum bank value based on how fast the aircraft is going. After that, though, we're basically doing the same as before, except now _if_ we're flying a compass heading, we update the target bank as described in the previous paragraph. 
+1. get our heading in degrees, and our target heading, then get the difference between those two. We need a special function for this, because compass angles wrap around, and there are two possible turns we can make, one shorter than the other. We always want the shortest one:
 
-However, since we're no longer flying in a straight line, we need one more block of code to make sure we don't try to turn _too_ fast. Without any restriction, the plane would just keep turning until the wings are vertical, we lose any sort of lift, and fall out of the sky. This is what is known in the industry as "not good", so we have one more check to see if our turn rate (as the number of degrees we're turning per second) is too high. If it is, we tell the plane to level out a little.
+   ```python
+   def get_compass_diff(current, target):
+     diff = (current - 360) if current > 180 else current
+     target = target - diff
+     return target if target < 180 else target - 360
+   ```
 
-And that's it, again: not _actually_ a lot of code, but we now have a heading mode and we can tell our plane to fly where _we_ want it to go, rather than where _it_ wants to go =)
+2. Set a limit on the permissible turn rate (think "how many degrees per second"), and the size by which we're going to bump the trim (`turn_rate` being equivalent to the SimConnect `TURN_INDICATOR_RATE` variable, measured in radians)
+
+3. Then the plane bank a little by shifting our center of gravity "off-center" by the bump amount and set a new aileron trim by mixing our current bank and center of gravity offset, which pushes us in a "less wrong" direction, eventually taking us all the way to our desired heading.
+
+And that's it, again: not a lot of code, but we now have a heading mode and we can tell our plane to fly where _we_ want it to, rather than where _it_ wants to =)
 
 ### Implementing Altitude Hold
 
@@ -773,53 +715,48 @@ Which brings us to the last mode: altitude hold. And if you're thinking "are we 
 Just like how heading mode works by preventing the leveling code from actually fully leveling the plane until it's pointing in the right direction, we're going to implement altitude hold as a bit of code that prevents vertical hold from reaching zero, instead staying on a value range that either makes the plane climb or descend, until we reach our desired altitude, at which point we let vertical hold do its thing and keep us there.
 
 ```python
-def hold_altitude(auto_pilot, state):
-  anchor = auto_pilot.anchor
+def hold_vertical_speed(self, alt, speed, vspeed, trim):
+  ...
+  alt_target = self.modes[ALTITUDE_HOLD]
+  alt_diff = (alt_target - alt) if alt_target else 0
 
-  VS = state.vertical_speed
-  max_VS = 1000
-  dVS = state.dVS
-  max_dVS = 20
+  step = map(speed, 50, 150, MSFS_RADIAN / 200, MSFS_RADIAN / 150)
 
-  trim = state.pitch_trim - anchor.y
-  trim_limit = state.pitch_trim_limit
-  trim_limit = 10 if trim_limit == 0 else trim_limit
-  trim_step = constrain_map(trim_limit, 5, 20, radians(0.001), radians(0.01))
-  kick = 10 * trim_step
-
-  target_VS = 0
-  alt_diff = 0
-
-  # Are we supposed to fly at a specific altitude?
-  if auto_pilot.modes[ALTITUDE_HOLD]:
-    altitude = state.altitude
-    target = auto_pilot.modes[ALTITUDE_HOLD]
-    target_VS = constrain(target - altitude, -max_VS, max_VS)
-    alt_diff = target - altitude
-    if abs(alt_diff) > 200:
-      target_VS = constrain_map(alt_diff, -1000, 1000, -max_VS, max_VS)
-    else:
-      target_VS = constrain_map(alt_diff, -200, 200, -max_VS, max_VS)
-
-  diff = target_VS - VS
-  max_dVS = 1 + constrain_map(abs(diff), 0, 100, 0, max_dVS - 1)
+  # if we're running altitude hold, set vertical speed target that'll get us there.
+  if alt_diff != 0:
+    vs_diff = constrain_map(alt_diff, -200, 200, -1000, 1000) - vspeed
 
   ...
-
-  # And then regardless of those two protection measures:
-  # nudge us towards the correct vertical speed
-  anchor.y += constrain_map(diff, -1000, 1000, -kick, kick)
-
-
-  auto_pilot.api.set_property_value('ELEVATOR_TRIM_POSITION', trim + anchor.y)
-  
 ```
 
 And that'll do it. Now we'll keep climbing or descending until we reach our desired altitude. Which means we're done!
 
+### Fixing altitude hold so it doesn't kill us
+
+Well... almost. Because while heading mode has a low potential for harm, altitude hold mode can absolutely still kill us by trying to climb or descend too fast. Yes, we have `vs_max` but if we're dropping fast, just a small trim adjustment isn't going to stop us from plummeting to the ground: we might need far more feet to correct for the dive than there are between us and the ground. If we ever even get to the ground, because aeroplanes are ridiculously fragile and while we're plummeting, we're picking up speed, and at some point that speed's going to rip the plane apart. Or, equally bad, we might try to trim up too much and pitch the plane so steeply that we lose lift, and _then_ we plummet to the ground and the previous two scenarios will still happen but now preceded by a stall.
+
+I think you'll agree none of that is desirable autopilot behaviour, so let's make sure it at least can't kill us (too easily) by adding some "over-vspeed" protection:
+
+```python
+  ...
+  correct += constrain_map(dvs, -dvs_max, dvs_max, step / 2, -step / 2)
+
+  # "omg what is happening??" protection
+  protection_steps = [2, 4, 6]
+  for i in protection_steps:
+    if (vspeed > i * vs_max and dvs > 0) or (vspeed < -i * vs_max and dvs < 0):
+      correct += constrain_map(vspeed, -1, 1, step / 2, -step / 2)
+
+  ...
+```
+
+If our vspeed is far past its maximum permitted value, and the acceleration is still pushing it further, we add several kicks in the opposite direction that is proportional to how much beyond acceptable levels things have gotten.
+
+And that's it, we're done! For real this time!
+
 ## We have an autopilot!
 
-Now, it's not a *great* autopilot, but it works (for the most part) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do! In fact, mix in some [Open-Elevation](https://open-elevation.com/) based on "current location" and "location 10 nautical miles ahead of me", get the elevation map for the next 10 miles, and then pick a safe elevation to hold, now we have "terrain follow" mode... there's a *lot* of fun left to be had!
+Now, it's not a *great* autopilot, but it works (for the most part) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do! In fact, mix in some [Open-Elevation](https://open-elevation.com/) based on "current location" and "location 10 nautical miles ahead of me", get the elevation map for the next 10 miles, and then pick a safe elevation to hold, now we have terrain "hugging"... there's a *lot* of fun left to be had!
 
 ## Bonus round: Level and Altitude Hold... upside down??
 

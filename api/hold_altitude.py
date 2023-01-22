@@ -3,8 +3,6 @@ from math import copysign, radians, degrees
 from constants import ALTITUDE_HOLD
 
 
-# TODO: this code doesn't quite do what the code comments suggests it does, it actually holds VS quite poorly
-
 def hold_altitude(auto_pilot, state):
     anchor = auto_pilot.anchor
 
@@ -15,7 +13,14 @@ def hold_altitude(auto_pilot, state):
     dVS = state.dVS
     max_dVS = 20
     trim = state.pitch_trim - anchor.y
-    trim_step = radians(0.01)
+    trim_limit = state.pitch_trim_limit
+
+    # There are some aircraft without explicit trim controls, such as the
+    # Asobo Top Rudder ultralight. In order to perform trimming anyway,
+    # we just "decree" that they have a trim limit of 10:
+    trim_limit = 10 if trim_limit == 0 else trim_limit
+    trim_step = constrain_map(trim_limit, 5, 20, radians(0.001), radians(0.01))
+
     target_VS = 0
     alt_diff = 0
 
@@ -48,24 +53,8 @@ def hold_altitude(auto_pilot, state):
         anchor.y += constrain_map(VS, -max_VS, max_VS, trim_step, -trim_step)
 
     # And then regardless of those two protection measures: nudge us towards the correct vertical speed
-    anchor.y += constrain_map(diff, -1000, 1000, -10 * trim_step, 10 * trim_step)
+    anchor.y += constrain_map(diff, -1000, 1000, -
+                              10 * trim_step, 10 * trim_step)
 
     auto_pilot.api.set_property_value(
         'ELEVATOR_TRIM_POSITION', trim + anchor.y)
-
-
-"""
-
-    # Are we getting progressively off kilter?
-    if (VS < target_VS and dVS < 0) or (VS > target_VS and dVS > 0):
-        anchor.y += constrain_map(diff, -max_VS, max_VS, -0.005, 0.005)
-
-    # Are we correcting for being off kilter, but too aggressively?
-    elif (VS > target_VS and dVS < -10) or (VS < target_VS and dVS > 10):
-        anchor.y -= constrain_map(diff, -max_VS, max_VS, -0.0015, 0.0015)
-
-    # Do we just need to bump in the right direction?
-    elif VS > -max_VS and VS < max_VS:
-        anchor.y += constrain_map(alt_diff, -max_VS, max_VS, -0.005, 0.005)
-
-"""

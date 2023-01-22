@@ -1,4 +1,4 @@
-from math import degrees, radians, copysign
+from math import degrees, radians, copysign, pi
 from utils import constrain, constrain_map, get_compass_diff
 from constants import HEADING_MODE
 
@@ -7,7 +7,11 @@ def fly_level(auto_pilot, state):
     anchor = auto_pilot.anchor
     trim = state.aileron_trim
 
-    bank = degrees(state.bank_angle)
+    factor = auto_pilot.inverted
+    center = 0 if factor == 1 else pi
+    bank = state.bank_angle
+    bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
+
     dBank = state.dBank
     target_bank = 0
     turn_rate = degrees(state.turn_rate)
@@ -55,7 +59,7 @@ def fly_level(auto_pilot, state):
         if turn_rate < -max_turn_rate or turn_rate > max_turn_rate:
             overshoot = turn_rate - max_turn_rate
             nudge = constrain_map(overshoot, -max_turn_rate,
-                                   max_turn_rate, -step/5, step/5)
+                                  max_turn_rate, -step/5, step/5)
             bump -= nudge
 
     anchor.x += bump

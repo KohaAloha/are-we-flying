@@ -19,6 +19,7 @@ class State:
     turn_rate = 0
     vertical_speed = 0
     pitch_trim = 0
+    pitch_trim_limit = 20
     aileron_trim = 0
 
     # Value deltas ("per second"). These are automatically
@@ -69,5 +70,6 @@ class State:
                 f'dBank: {"{:.5f}".format(self.dBank)}',
                 f'dTurn: {"{:.5f}".format(self.dTurn)}',
                 f'dHeading: {"{:.5f}".format(degrees(self.dHeading))}°/s',
+                f'trim limit: {"{:.5f}".format(self.pitch_trim_limit)}',
             ]),
         ])
