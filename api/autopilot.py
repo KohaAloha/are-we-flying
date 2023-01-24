@@ -68,27 +68,23 @@ class AutoPilot():
         self.modes[ap_type] = not self.modes[ap_type]
         if self.modes[ap_type]:
             if ap_type == VERTICAL_SPEED_HOLD:
-                print(f'Engaging VS hold')
-                self.prev_speed = self.get('AIRSPEED_TRUE')
-                self.prev_vspeed = self.get('VERTICAL_SPEED')
+                print(f'Engaging vertical speed hold')
+                self.anchor.y = self.get('ELEVATOR_TRIM_POSITION')
         if ap_type == LEVEL_FLIGHT:
-            self.lvl_center = 0
-            self.prev_bank = self.get('PLANE_BANK_DEGREES')
+            print(f'Engaging level mode')
+            self.anchor.x = self.get('AILERON_TRIM_PCT')
         if ap_type == INVERTED_FLIGHT:
             self.inverted = -1 if self.modes[ap_type] else 1
-            # self.anchor.x = ...
-            sanity_trim = -0.1 if self.inverted else 0.05
-            self.set('ELEVATOR_TRIM_POSITION', sanity_trim)
         return self.modes[ap_type]
 
     def set_target(self, ap_type, value):
         if ap_type in self.modes:
             self.modes[ap_type] = value if value != None else False
             if ap_type == ALTITUDE_HOLD:
-                print(f'Engaging ALT hold to {value}')
+                print(f'Engaging altitude hold at {value} feet')
                 self.prev_alt = self.get('INDICATED_ALTITUDE')
             if ap_type == HEADING_MODE:
-                print(f'Engaging HDG hold to {value}')
+                print(f'Engaging heading hold at {value} degrees')
                 self.set('AUTOPILOT_HEADING_LOCK_DIR', value)
             return value
         return None

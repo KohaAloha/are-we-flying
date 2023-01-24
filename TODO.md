@@ -1,3 +1,4 @@
+- add preset curves to constrain_map so that we can do linear vs. ease-out vs. drop-off
 - Fix heading oscillation when setting HDG to "current +/- 180"
 - move terrain-follow from JS to python?
 - fix predictive terrain follow, it's using the wrong angle for heading and keeps crashing us into mountain sides

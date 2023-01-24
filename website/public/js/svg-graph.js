@@ -89,6 +89,9 @@ class SVGChart {
       viewBox: `0 ${this.min} ${width} ${height}`,
     }));
     parentElement.appendChild(SVGChart);
+    const style = element(`style`);
+    style.textContent = `text { font: 16px Arial; }`;
+    SVGChart.appendChild(style);
 
     // time series
     let g = (this.g = element(`g`, {
@@ -103,12 +106,48 @@ class SVGChart {
     g.appendChild(p);
 
     // legend
-    let legend = (this.legend = element(`g`, { opacity: 0.3 }));
+    let legend = (this.legend = element(`g`, { style: `opacity: 0.3` }));
     SVGChart.appendChild(legend);
 
     this.labels = {};
     this.started = false;
     this.startTime = 0;
+
+    this.addEventHandling(SVGChart);
+  }
+
+  addEventHandling(svg) {
+    const { top, left, width, height } = svg.getBoundingClientRect();
+    const cvs = document.createElement(`canvas`);
+    cvs.id = `svg-canvas`;
+    cvs.width = width - 2;
+    cvs.height = height - 2;
+    cvs.style.position = `absolute`;
+    cvs.style.top = `${top}px`;
+    cvs.style.left = `${left}px`;
+    const ctx = cvs.getContext(`2d`);
+    ctx.fillStyle = `white`;
+    svg.addEventListener(`mouseenter`, () => {
+      document.body.appendChild(cvs);
+      const img = new Image();
+      img.width = width - 2;
+      img.height = height - 2;
+      img.onload = () => {
+        ctx.fillRect(-1, -1, width, height);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.onerror = (e) => console.error(e);
+      const code = svg.outerHTML
+        .replace(
+          `<svg `,
+          `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" `
+        )
+      img.src = `data:image/svg+xml,${encodeURIComponent(code)}`;
+    });
+    cvs.addEventListener(`mouseleave`, () => {
+      const cvs = document.getElementById(`svg-canvas`);
+      if (cvs) cvs.parentNode.removeChild(cvs);
+    });
   }
 
   start() {
