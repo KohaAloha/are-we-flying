@@ -3,7 +3,7 @@ from typing import Dict, Union
 from threading import Timer
 from simconnection import SimConnection
 from fly_level import fly_level
-from hold_altitude import hold_altitude
+from vertical_hold import vertical_hold
 from state import State
 from utils import test
 from vector import Vector
@@ -157,6 +157,6 @@ class AutoPilot():
 
         # Do we need to hold our altitude?
         if self.modes[VERTICAL_SPEED_HOLD]:
-            hold_altitude(self, state)
+            vertical_hold(self, state)
 
         self.prev_state = state

@@ -3,7 +3,7 @@ from math import copysign, radians, degrees
 from constants import ALTITUDE_HOLD
 
 
-def hold_altitude(auto_pilot, state):
+def vertical_hold(auto_pilot, state):
     # anchor adjustments: positive numbers raise the nose, negative numbers drop it down.
     anchor = auto_pilot.anchor
 
