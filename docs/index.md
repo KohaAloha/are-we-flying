@@ -7,8 +7,6 @@
   <figcaption style="font-style: italic; text-align: center;">Flying planes with Python, you say?<br><sub>(image created by Dall-E)</sub></figcaption>
 </figure>
 
-
-
 To allay any concerns: this will not be actually running Python or JavaScript software in the cockpit of a real aircraft in order to effect automated flight: that would kill people. Instead, we're writing a web page that can control an autopilot running in Python that in turn controls a little virtual aeroplane. And by "little" I actually mean "any aeroplane in [Microsoft Flight Simulator](https://www.flightsimulator.com/)" because as it turns out, MSFS comes with an API that can be used to both query _and set_ values relating from anything as simple as cockpit lights to something as complex as spawning a fleet of aircraft and making them perform formation flights while making their smoke pattern spell out the works of Chaucer in its original middle English.
 
 While we're not doing that (today), we _are_ going to write an autopilot for planes that don't have one, as well as planes that do have one but that are just a 1950's chore to work with, like the one in my favourite real-life plane, the [DeHavilland DHC-2 "Beaver"](https://en.wikipedia.org/wiki/De_Havilland_Canada_DHC-2_Beaver), originally made by DeHavilland but these days made by [Viking Air](https://www.vikingair.com/viking-aircraft/dhc-2-beaver). Specifically, the float plane version, which flies between [Vancouver](https://www.openstreetmap.org/relation/2218280) and Eastern [Vancouver Island](https://www.openstreetmap.org/relation/2249770) and locations dotted around the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885)). I don't have a pilot's license, but the nice thing about tiny flights is that you regularly get to sit in the copilot seat, and enjoy beautiful British Columbia from only 300m up.
@@ -740,7 +738,12 @@ Of course, a real autopilot does this monitoring continuously. However, we're go
 
 Before we do anything else, let's first look at what is probably _the_ single most important function in our autopilot: `constraint_map`. This function takes a value, relative to some interval `[a,b]`, and maps it to the corresponding value in a different interval `[c,d]`, such that `a` maps to `c`, `b` maps to `d`, anything in between `a` and `b` is some new value between `c` and `d`, but crucially, any value less than `a` still maps to `c` and any value greater than `b` still maps to `d`:
 
-![constraint mapping](constraint_map.png)
+<figure style="width: 80%; margin: auto; margin-bottom: 1em;">
+  <a href="constraint_map.png" target="_blank">
+    <img src="constraint_map.png" alt="Constrained mapping"/>
+  </a>      
+  <figcaption style="font-style: italic; text-align: center;">Mapping interval [a,b] to [c,d]<br></figcaption>
+</figure>
 
 And that last part is critically important: if we're going to write an autopilot, we want to be able to effect proportional changes, but we want to "cap" those changes to some minimum and maximum value. So, let's implement `map`, `constrain`, and then put them together into a `constrain_map`:
 
@@ -763,7 +766,12 @@ def constrain_map(v, a, b, c, d):
 
 And then just because this is also going to be important: when we're mapping from some interval "around zero" (for example, between `-max_bank` and `max_bank`) to another interval "around zero" (for example, between `-step_size` and `step_size`), there will be cases where we don't actually want zero itself. For instance, if we need to nudge an aircraft left a little, based on how close it is a target heading, we don't want the correction to become so close as to basically do nothing, just because we're getting close to a target heading. As such, we're going to extend `constraint_map` with one an optional "forbidden" zone:
 
-![constraint mapping with a forbidden interval](constraint_map_limited.png)
+<figure style="width: 80%; margin: auto; margin-bottom: 1em;">
+  <a href="constraint_map_limited.png" target="_blank">
+    <img src="constraint_map_limited.png" alt="Constrained mapping with a dead zone"/>
+  </a>      
+  <figcaption style="font-style: italic; text-align: center;">Mapping interval [a,b] to [c,d] with a dead zone<br></figcaption>
+</figure>
 
 For which the code gets the following update:
 
@@ -929,7 +937,11 @@ There are a few more "magic numbers" that we can fiddle with here, just like bef
 
 Writing code is well and good, but how good is it? Let's fly some planes and see what the graphs tell us. Let's start with the Top Rudder 103 Solo ultralight. This plane has a throttle, and a stick, and that's basically it, so what happens if we tell it that it actually has an autopilot and we start trimming it to fly fully level?
 
-![image-20230128123402555](top-rudder-vsh-lvl.png)
+<figure style="width: 40%; margin: auto; margin-bottom: 1em;">
+  <a href="top-rudder-vsh-lvl.png" target="_blank">
+    <img src="top-rudder-vsh-lvl.png" alt="The Top Rudder 103 Solo in VSH+LVL mode"/>
+  </a>
+</figure>
 
 We see the vertical speed (the violently shaky pink line) trying to stay near zero, but we can also see that ultralight aircraft are... well, ultra light. The spikes in vspeed are from updrafts and pervasive wind, resulting in our altitude (The green line at the top) not actually being a straight line until we hit smooth air. Looking at what happens over time, we see that our code is doing its best to get us back to zero... and despite the wind's best efforts, succeeding at it.
 
@@ -937,13 +949,21 @@ Similarly, we see that we're trying to fly straight (the black center line showi
 
 What about a heavier aircraft, like the DHC-2 Beaver?
 
-![image-20230127123609777](beaver-vsh-lvl.png)
+<figure style="width: 40%; margin: auto; margin-bottom: 1em;">
+  <a href="beaver-vsh-lvl.png" target="_blank">
+    <img src="beaver-vsh-lvl.png" alt="The DHC-2 Beaver in VSH+LVL mode"/>
+  </a>
+</figure>
 
 Turns out having some more mass lets the autopilot code converge to a stable situation much faster, with the wind having less of an effect on the plane from moment to moment, but it's still going to jostle us around. We can see there's a constant updraft, but our vertical hold code at least trying to push us down, "winning" over the updraft and pushing us back to zero, at which point the updraft wins again, rinse and repeat until the updraft's gone. However, in terms of our leveling code, our heading is much more stable: cross wind has far less of an effect on a heavier plane.
 
 So what about a faster plane? Let's see what happens for the Cessna 310R.
 
-![image-20230127125236491](310r-vsh-lvl.png)
+<figure style="width: 40%; margin: auto; margin-bottom: 1em;">
+  <a href="310r-vsh-lvl.png" target="_blank">
+    <img src="310r-vsh-lvl.png" alt="The Cessna 310r in VSH+LVL mode"/>
+  </a>
+</figure>
 
 We start into the autopilot with a significant vertical speed, so we see an initial correction that converges about as fast as the Beaver, after which we see the opposite of the Beaver's updraft behaviour: the vertical hold code paired with the speed of the plane means that we mostly "win" once our vertical hold code kicks in, and we dip below zero. Our overall altitude drops a little, but not as much as the Beaver's went up. We also see that going fast really helps in keeping you going straight: our heading is a much straighter line than for the Beaver, showing significantly less drift.
 
@@ -1020,17 +1040,29 @@ Let's look at some graphs again to see how things behave, We'll get the planes t
 
 First up, the Top Rudder 103 Solo:
 
-![image-20230127135213186](top-rudder-vsh-hdg.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="top-rudder-vsh-lvl.png" target="_blank">
+    <img src="top-rudder-vsh-hdg.png" alt="The Top Rudder 103 Solo in VSH+HDG mode"/>
+  </a>
+</figure>
 
 We see that it's actually doing pretty well! Jumping 10, 30, 100, and 140 degrees all seem to get to their target fast enough, there's a bit of overshoot, and a bit of an oscillating convergence, but for the most part it's doing what it needs to do (especially for a plane that technically has no trim controls). We do see a rather prolonged oscillation at the end, but that's mostly because that was right when the plane was flying over a river delta and the wind decided to have some fun. 
 
 What about the Beaver?
 
-![image-20230127140531988](beaver-vsh-hdg.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="beaver-vsh-lvl.png" target="_blank">
+    <img src="beaver-vsh-hdg.png" alt="The DHC-2 Beaver in VSH+HDG mode"/>
+  </a>
+</figure>
 
 Slightly less overshoot, and similar heading holding action. Nice! So what about our (much) faster 130R?
 
-![image-20230127144635060](310r-vsh-hdg.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="310r-vsh-lvl.png" target="_blank">
+    <img src="310r-vsh-hdg.png" alt="The Cessna 310r in VSH+HDG mode"/>
+  </a>
+</figure>
 
 Similar curves to the Beaver: pretty good!
 
@@ -1070,23 +1102,39 @@ Let's find out! Again, we'll profile our three aircraft, this time setting a tar
 
 First up again is the Top Rudder 103 Solo:
 
-![image-20230127152017802](rudder-crash.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="rudder-crash.png" target="_blank">
+    <img src="rudder-crash.png" alt="The Top Rudder 103 Solo trying very, very hard..."/>
+  </a>
+</figure>
 
-Oh dear...
+Oh... oh dear...
 
-![image-20230127152105284](rudder-crash-graph.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="rudder-crash-graph.png" target="_blank">
+    <img src="rudder-crash-graph.png" alt="The Top Rudder 103 Solo not succeeding at climbing 1000 feet"/>
+  </a>
+</figure>
 
 The Top Rudder might be nimble, but asking it to pretend it's a plane capable of transitioning 1000 feet at a time is maybe asking a little too much of it. We can see it trying to climb, but as it climbs, it's losing speed, and even though it's only climbing at a mere 300 feet per minute, at some point our airspeed drops to something low enough that the aircraft stalls, and we end up in a death spiral. We can fairly easily recover from this if we turn off the autopilot, but if we keep it on... happy birthday to the ground. The lesson: even if we can cram an autopilot into an ultralight, we still need to be realistic about what it can do =)
 
 So what about the Beaver?
 
-![image-20230127165506535](beaver-alt-hdg.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="beaver-alt-hdg.png" target="_blank">
+    <img src="beaver-alt-hdg.png" alt="The DHC-2 Beaver climbing and descending 1000 feet"/>
+  </a>
+</figure>
 
 Marking the target altitude with the blue block line up top, and our vertical speed in wibbly pink, this looks reasonably good: when we tell the autopilot to switch altitudes from 1500 feet to 2500 feet, we incur a positive vertical speed, keep it positive for as long as necessary, and then ramp back down to zero once we reach our new altitude. And then running the reverse shows the same behaviour, just mirrored.
 
 So let's look at what the 310R does with this code:
 
-![image-20230127164314069](310r-alt-hdg.png)
+<figure style="width: 50%; margin: auto; margin-bottom: 1em;">
+  <a href="310r-alt-hdg.png" target="_blank">
+    <img src="310r-alt-hdg.png" alt="The Cessna 310R climbing and descending 1000 feet"/>
+  </a>
+</figure>
 
 A similar story, although we're seeing it take an awfully long time to correct for the over/undershoot. The plane recovers from less than 100 feet to 50 quickly enough, but then lingers at the wrong altitude seemingly forever. That's annoying, but not a deal breaker, and we've spent a fair amount of time on this already, so...
 
