@@ -31,7 +31,7 @@ class Series {
     this.max = 0;
   }
 
-  setProperties({ fill = false, min = false, max = false }) {
+  setProperties({ fill = false, limit = false, min = false, max = false }) {
     if (fill !== false) {
       const { baseline, color } = fill;
       this.baseline = baseline;
@@ -39,6 +39,10 @@ class Series {
       set(this.path, `fill`, color);
       if (this.filled) set(this.path, `stroke`, color);
       this.color = color;
+    }
+    if (limit !== false) {
+      min = -limit;
+      max = limit;
     }
     this.min = min ?? this.min;
     this.max = max ?? this.max;
@@ -137,11 +141,10 @@ class SVGChart {
         ctx.drawImage(img, 0, 0);
       };
       img.onerror = (e) => console.error(e);
-      const code = svg.outerHTML
-        .replace(
-          `<svg `,
-          `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" `
-        )
+      const code = svg.outerHTML.replace(
+        `<svg `,
+        `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" `
+      );
       img.src = `data:image/svg+xml,${encodeURIComponent(code)}`;
     });
     cvs.addEventListener(`mouseleave`, () => {
@@ -160,8 +163,14 @@ class SVGChart {
   }
 
   setProperties(...entries) {
-    entries.forEach(({ label, ...props }) => {
-      this.getSeries(label).setProperties(props);
+    entries.forEach(({ label, labels, ...props }) => {
+      if (!labels) {
+        labels = label;
+      }
+      labels.split(`,`).forEach((l) => {
+        label = l.trim();
+        this.getSeries(label).setProperties(props);
+      });
       const { fill } = props;
       if (fill) {
         const patch = document.querySelector(`g.${label} rect`);

@@ -22,11 +22,11 @@ def constrain_map(v: float, ds: float, de: float, ts: float, te: float, lm=None,
     val = constrain(map(v, ds, de, ts, te), ts, te)
     if lm is None or LM is None:
         return val
-    mid = (lm + LM) / 2
     if val < lm:
         return val
     if val > LM:
         return val
+    mid = (lm + LM) / 2
     if val > lm and val <= mid:
         return lm
     if val < LM and val >= mid:

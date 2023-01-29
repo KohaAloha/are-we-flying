@@ -8,7 +8,7 @@ def vertical_hold(auto_pilot, state):
     anchor = auto_pilot.anchor
 
     # How much should we trim by?
-    trim_limit = state.pitch_trim_limit
+    trim_limit = state.pitch_trim_limit[0]
     trim_limit = 10 if trim_limit == 0 else trim_limit
     trim_step = constrain_map(trim_limit, 5, 20, radians(0.001), radians(0.01))
     kick = 10 * trim_step

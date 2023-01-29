@@ -1,1 +1,1 @@
-git+https://github.com/pomax/python-simconnect@master#egg=python-simconnect
+git+https://github.com/pomax/python-simconnect@master#egg=simconnect

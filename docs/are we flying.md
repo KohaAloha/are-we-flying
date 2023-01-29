@@ -16,24 +16,34 @@ While we're not doing that (today), we _are_ going to write an autopilot for pla
   <a href="https://harbourair.com/flight-info/flight/locations" target="_blank">
     <img src="ha-flights.png" alt="Local floatplane routes"/>
   </a>
-  <figcaption style="font-style: italic; text-align: center;">In case anyone is visiting Vancouver...<br><sub>(Map owned by Harbour Air)</sub></figcaption>
+  <figcaption style="font-style: italic; text-align: center;">In case anyone is visiting Vancouver...<br><sub>(Map owned by <a href="https://harbourair.com/">Harbour Air</a>)</sub></figcaption>
 </figure>
 
-But back to Python and JavaScript: MSFS comes with an SDK called the [SimConnect SDK](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_SDK.htm) that lets people write addons for the game using C, C++, or languages with .NET support, and so of course folks have been writing connectors in those languages to "proxy" the SimConnect calls to officially unsupported languages like Go, Node, Python, etc. And so, of course, my first thought was "cool, I can write an express server that connects to MSFS?" Except the reality is that: no, at least not directly. The `node-simconnect` package is rather incomplete, and so instead we reach for the next best thing: [python-simconnect](https://pypi.org/project/SimConnect/). We now need two languages, but they're both fairly easy to work with so why not.
+But back to Python and JavaScript: MSFS comes with an SDK called the [SimConnect SDK](https://docs.flightsimulator.com/html/Programming_Tools/SimConnect/SimConnect_SDK.htm) that lets people write addons for the game using C, C++, or languages with .NET support, and so of course folks have been writing connectors in those languages to "proxy" the SimConnect calls to officially unsupported languages like Go, Node, Python, etc.
 
-Using `python-simconnect`, we can write a tiny Python webserver with `GET` calls for querying MSFS, and `POST` calls for setting values in-sim. Although it turns out that even `python-simconnect` is incomplete (although far less so), so we're actually using [a fork I made](https://github.com/Pomax/Python-SimConnect/tree/edits) that makes some improvements we need to in order to tell all the different states that MSFS can be in apart, as well as adding a few missing sim variables, and renaming some that had the wrong name.
+Since the idea is to interface with MSFS from a webpage, and webpages use JS, my first thought was "cool, I can write an express server that connects to MSFS?" to which the answer unfortunately is no. At least not directly. The `node-simconnect` package is rather incomplete, and so rather than using Node to interface with MSFS, we reach for the next best thing: [python-simconnect](https://pypi.org/project/SimConnect/). Sure, we now need two languages, but they're both fairly easy to work with so why not.
 
-Using that, we can write some good old static HTML with some plain JS that uses [the Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) to talk to our simple Python API server for all its needs.
+Using `python-simconnect`, we can write a tiny Python webserver with `GET` calls for querying MSFS, and `POST` calls for setting values in-sim, and then our webpage can just use [the Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) to talk to our Python server for all its needs. Although it turns out that even `python-simconnect` is incomplete (although far less so than `node-simconnect`), so we're actually using [a fork I made](https://github.com/Pomax/Python-SimConnect/tree/edits) that makes some improvements we need to in order to tell all the different states that MSFS can be in apart, as well as adding a few missing sim variables, renaming some that had the wrong name, and fixing some that had the wrong editable flag set.
+
+So let's get coding!
 
 ### A simple Python API server
 
-Let's write a simple Python script that sets up a "SimConnection" object (which will handle all the MSFS connector logic), a `GET` route for getting values out of MSFS, and a `POST` route for setting values in MSFS.
+Let's write a simple Python script that sets up a "SimConnection" object (which will handle all the MSFS connector logic), a `GET` route for getting values out of MSFS, and a `POST` route for setting values in MSFS. First, we'll create a virtual environment to work with, and install the SimConnect fork:
+
+```powershell
+C:\Users\You\Documents\are-we-flying\> python -m venv venv
+C:\Users\You\Documents\are-we-flying\> venv\Scripts\activate
+(venv) C:\Users\You\Documents\are-we-flying\> python -m pip install git+https://github.com/pomax/python-simconnect@master#egg=simconnect
+```
+
+Then we create a `server.py` file:
 
 ```python
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
-from simconnection import SimConnection
+from SimConnect import SimConnection
 
 host_name = "localhost"
 server_port = 8080
@@ -56,18 +66,18 @@ class ProxyServer(BaseHTTPRequestHandler):
     self.set_headers()
 
     # If we don't have MSFS running, there is no point in trying
-    # to do anything: we have no connection to the sim.
+    # to do anything on a GET request: we have no connection to the sim.
     if not sim_connection.connected:
       return self.wfile.write(json.dumps(None).encode('utf-8'))
 
-    # If we get here, we know MSFS is running, so we create
-    # a special route that can be fetch()ed to check.
+    # If we get here, we know MSFS is running, so we can add
+    # a special route that can be fetch()ed to check that fact.
     if '/connected' in self.path: data = True
 
     # for any other route, we treat it as API call.
     else: data = self.get_api_response()
 
-    # and then send the data as http response, making sure the
+    # and then we send our data as http response, making sure the
     # response is never empty.
     if data != None: data = json.dumps(data).encode('utf-8')
     else: data = "{}"
@@ -75,31 +85,26 @@ class ProxyServer(BaseHTTPRequestHandler):
 
   def do_POST(self):
     self.set_headers()
-    # For posts, we set values directly from the URL rather than
-    # trying to parse a POST payload, based on name=val pairs.
+    # Just so we don't have to bother with POST payloads, we use plain
+    # name=val URL parameters for all our value-setting needs.
     data = False
     query = urlparse(self.path).query
     if query != '':
       (prop, value) = query.split("=")
-      # but we do want to make sure that any spaces are made safe.
+      # We do want to make sure that any spaces are made safe, though:
       prop = prop.replace("%20", "_")
-      data = sim_connection.set_property_value(prop, value)
+      data = sim_connection.set(prop, value)
     self.wfile.write(json.dumps(data).encode('utf-8'))
 
   def get_api_response(self):
-    # This gets called as GET handler: it uses ?get=name1,name2,name3,[...]
     key_values = None
-    query = urlparse(self.path).query
-    if query != '':
-      terms = query.split("&")
-      if len(terms) > 0:
-        key_values = dict(qc.split("=") for qc in terms)
-        if 'get' in key_values:
-          props = [s.replace("%20", "_")
-               for s in key_values['get'].split(",")]
-          for prop in props:
-            key_values[prop] = sim_connection.get_property_value(
-              prop)
+    query = parse_qs(urlparse(self.path).query)
+    if 'get' in query:
+      # If there's a get=name1,name2,... in the URL, split those names and
+      # get the value for each name from MSFS:
+      props = [s.replace("%20", "_") for s in query['get'].split(",")]
+      for prop in props:
+        key_values[prop] = sim_connection.get(prop)
     return key_values
 
 def run():
@@ -109,25 +114,22 @@ def run():
 
   try:
     webServer = HTTPServer((host_name, server_port), ProxyServer)
-    print(f'Server started http://{host_name}:{server_port}')
+    print(f'Server started on http://{host_name}:{server_port}')
     webServer.serve_forever()
   except KeyboardInterrupt:
     sim_connection.disconnect()
     webServer.server_close()
-    print('Server stopped')
-
+    print('Server stopped.')
 
 if __name__ == "__main__":
   run()
 ```
 
-Of course the `SimConnection` is doing a fair bit of heavy lifting here, so have a look at [its code here](https://gist.github.com/Pomax/4349a9259426c8af7a6347d2c91e11d8) if you want to know what it's doing when we call `get_property_value` or `set_property_value`.
-
-With that part covered, we can start writing a webpage that talks to MSFS!
+With that part covered, we can start writing a webpage that talks to MSFS through our Python server!
 
 ## A handy web page
 
-We'll start with a bare bones web page, just enough to get us going:
+We'll start with a bare bones `index.html` web page, just enough to get us going, which we'll stick in a `website\public` dir:
 
 ```html
 <!DOCTYPE html>
@@ -141,14 +143,16 @@ We'll start with a bare bones web page, just enough to get us going:
   <body>
   <h1>Are we flying?</h1>
   <ul id="questions">
-    <!-- ... -->
+    <!-- we'll fill this in later... -->
   </ul>
-  <div id="map"></div>
+  <div id="map">
+    <!-- we'll fill this in later, too... -->
+  </div>
   </body>
 </html>
 ```
 
-With a foreshadowing stylesheet:
+With a foreshadowing stylesheet `website\public\style.css`:
 
 ```css
 #plane-icon {
@@ -156,7 +160,7 @@ With a foreshadowing stylesheet:
 }
 ```
 
-And a trivial JS file:
+And a trivial `website\public\index.js` file:
 
 ```javascript
 // look at all this empty space! O_O
@@ -166,13 +170,23 @@ We'll fill in the rest as we go along. But we do need a server to use this web p
 
 ## Setting up a simple web server
 
-There's a ton of choices here, because every programming language under the sun has a way to set up a web server. The absolute simplest is to run `python -m http.server` in the same directory as your webpage, and presto, you have a web server running on http://localhost:8080! We're not doing that though, because we want to server up content _and_ proxy any API calls to our python server. 
+There's a ton of choices here, because every programming language under the sun has a way to set up a web server. The absolute simplest is to run `python -m http.server` in the same directory as your webpage, and presto, you have a web server running on http://localhost:8080! 
+
+However, we're not doing that, because we want to serve up content _and_ proxy any API calls to our python server, so we don't want our webpage to actually know where the python server lives, instead being able to just call `/api/....` as if those are the api server's routes
 
 ***"Why would we do this?"***
 
-That's a good question: in order for our python server to work with MSFS, we want to have that run on our computer. But we almost certainly don't want to be running a web server on our own computer once we're ready to actually put this online, and we don't want other people to be able to just look up our IP address in their browser because our webpage is trying to talk directly to  our little python server. We only want people to be able to see the IP address of the web server, and then have the web server talk to our own computer "server side", meaning that the only thing that knows our IP address is a server we control, not some random internet user's browser. Much more secure!
+That's a good question: web pages can run just about anywhere, but in order for our python server to work with MSFS, we need to have it run on our own computer. That comes with risks: we don't want other people to be able to just look at their browser's network tab and copy our IP address to then do all kinds of fun things with. Perhaps I should put fun in quotes. Those things tend to not be fun at all.
 
-To that effect, we're going to set up a simple Node.js [express server](https://expressjs.com/), mostly because that has an almost trivial way to set up the proxying we need:
+Instead, we only want people to be able to see the IP address of the web server that's serving up our web page, and have the web page communicate only with that server. We can then make the web server talk to _our_ computer on the "server side". That's one extra step, but now people can't just trivially find our IP and do questionable things.
+
+To that effect, we're going to set up a simple Node.js [express server](https://expressjs.com/), mostly because it has an almost trivial way to set up a proxy to another server for a specific route, using `express-http-proxy`. First up, let's make a `website` dir, and install the necessary dependencies in there:
+
+```
+C:\Users\You\Documents\are-we-flying\website\> npm install express express-http-proxy open
+```
+
+And then we create our `website\server.js`:
 
 ```javascript
 import express from "express";
@@ -182,7 +196,7 @@ const app = express();
 const WEB_SERVER_PORT = 3000;
 const API_SERVER_URL = `http://localhost:8080`;
 
-// Some housekeeping: turn off any and all caching
+// Some housekeeping: disallow all server and browsers caching
 app.disable("view cache");
 app.set("etag", false);
 app.use((_req, res, next) => {
@@ -190,7 +204,7 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Then, make sure html, css, and js all get served with the correct mime type:
+// Then, make sure static html, css, and js content all gets served with the correct mime type:
 app.use(
   express.static("public", {
     setHeaders: (res, path, stat) => {
@@ -207,32 +221,37 @@ app.use(
 app.post(`/api`, proxy(API_SERVER_URL));
 app.get(`/api`, proxy(API_SERVER_URL));
 
-// ...and redirect the root URL to index.html, common to most server software
+// ...and redirect the root URL to index.html, something we all expect.
 app.get(`/`, (_req, res) => res.redirect(`/index.html`));
 
 // Then with all that: start up the server!
-app.listen(WEB_SERVER_PORT, () => console.log(`Server listening on http://localhost:${WEB_SERVER_PORT}`));
+app.listen(WEB_SERVER_PORT, () => {
+  console.log(`Server listening on http://localhost:${WEB_SERVER_PORT}`);
+  if (!process.argv.includes(`--no-open`)) {
+    open(`http://localhost:${WEB_SERVER_PORT}`);
+  }
+});
 ```
 
-
+With both these things set up, we can start filling out our web page with actually interesting information.
 
 ### Are we flying?
 
-We'll start with a super basic webpage that just checks whether we're even flying a plane in MSFS at all. After all, if we're not flying, there's nothing to autopilot.
+Let's start by just checking whether we're even flying a plane in MSFS at all. After all, if we're not flying, there's nothing to add an autopilot to either.
 
 We'll need to check a few things:
 
 1. Is the API server running?
 2. Is MSFS running?
-3. Are we "playing" instead of navigating the menus?
-4. If all the above are true, what are the various bits of flight information, like speed, altitude, etc.?
+3. Are we "playing" instead of navigating the menus or having the game paused?
+4. If all the above are true, what are the various bits of flight information that we can visualize, like speed, altitude, etc.?
 
 <figure style="width: 90%; margin: auto; margin-bottom: 1em;" >
   <img src="flow.png" alt="A simple flow chart"/>
   <figcaption style="font-style: italic; text-align: center;"></figcaption>
 </figure>
 
-We'll update our page a little with those states:
+So let's update our `index.html` with those states:
 
 ```html
 <ul id="questions">
@@ -243,58 +262,87 @@ We'll update our page a little with those states:
 </ul>
 ```
 
-With some JS to match:
+With then let's start filling our `index.js` to match:
 
 ```javascript
 const API_URL = `http://localhost:8080`;
 
 function getAPI(...propNames) {
+  // a handy little API helper
   return fetch(`${API_URL}/?get=${propNames.join(`,`)}`).then(r => r.json());
 }
 
 function find(qs) {
+  // I don't want to write "document.querySelector" everywhere,
+  // so I always have a find(...) in my plain JS projects.
   return document.querySelector(qs);
 }
 
+// Step 1: is the API server running?
 function checkForServer() {
-  fetch(`${API_URL}`).then(() =>
+  fetch(API_URL).then(() =>
     find(`.api-running`).textContent = `yes!`;
-    checkForMSFS()
-  ).catch(() =>
-    setTimeout(checkForServer, 1000));
+    checkForMSFS();
+  )
+  // If the fetch failed, try it again one second from now.
+ .catch(() => setTimeout(checkForServer, 1000));
 }
 
+// Step 2: is MSFS running?
 async function checkForMSFS() {
   const connected = await fetch(`${API_URL}/connected`);
   if (connected === true) {
     find(`.msfs-running`).textContent = `yes!`;
-    checkForPlaying();
-  } else {
-    setTimeout(checkForMSFS, 1000);
+    return checkForPlaying();
   }
+  // if the API server is up, but MSFS isn't running,
+  // check again one second from now.
+  setTimeout(checkForMSFS, 1000);
 }
 
-function checkForPlaying() {
+// Step 3: are we in-game?
+async function checkForPlaying() {
   // we'll add this code in the next section!
 }
 ```
 
-### Are we in-game?
+### Let's test this!
 
-So far so good, we can check for the server, because the network request fails if it's not up, and we can check for whether it's connected to MSFS once the server is up, but then we hit a snag.
+Let's create a little `run.bat` so we can run one command to start up both the python server and our express server, and then automatically open the browser to show us our page:
 
-It turns out MSFS has no good way to tell you whether someone's actually in game or not. Rather than an easy to query variable, MSFS expects you to be monitoring game state transition events, which won't be super useful if set start up the server after already started flying, so we're obviously not going to do that. Instead, I updated `python-simconnect` to have a special variable that's not in the SimConnect SDK itself: `SIM_RUNNING`, which is an `int.int` formatted value. The leading number is one of 0, 1, 2, or 3, where the value 3 means we're playing the game, 2 means we've paused the game, and 1 or 0 tells us we're navigating the menu system out-of-game. The trailing number represents the current game camera angle (a number between 2 and 25) which we can use to determine whether we're legitimately flying the plane, or whether we're in [slew mode](https://www.flightsim.com/vbfs/showthread.php?286073-What-the-heck-is-quot-slew-quot-mode).
+```powershell
+@echo off
+start "" cmd /k "cd venv\Scripts & activate & cd ..\..\api & title Autopilot & python server.py"
+start "" cmd /k "cd website & title Webserver & npm start"
+```
+
+If we have MSFS running we can now run `C:\Users\You\Documents\are-we-flying\run` and this will start two Windows command prompts, one running our python API server in a virtual environment, and one running our Express webserver, automatically opening your browser to the webserver's local URL.
+
+### Next: are we in-game?
+
+So: so far, so good. We can check for the server, because the network request fails if it's not up, and we can check for whether it's connected to MSFS once the server is up, but then we hit a snag.
+
+It turns out MSFS has no good way to tell you whether someone's actually in game or not. That is to say, rather than offering an easy to query variable, Microsoft designed the SimConnect SDK with in-game addons in mind, so it expects your code to start up _with_ MSFS, registering an event listener, and then when the game starts your can gets notified about state transition events.
+
+This is not super useful if we start up our API server late, or even only after we already started flying, so we're obviously not going to be able to use that part of the SimConnect SDK: we have to come up with something different. So, to make things a little easier, I updated my fork of `python-simconnect` to have a special variable that's not part of the official SimConnect SDK itself: `SIM_RUNNING`, which is an `int.int` formatted value. The integer part of the number is one of 0, 1, 2, or 3, where the value 3 means we're playing the game, 2 means we're in game but we paused the game, and 1 or 0 tells us we're navigating the menu system out-of-game or are in game state transition screens (like the loading screen after picking a plane and departure point on the world map). The decimal fraction part of the number represents the current game camera angle (a number between 2 and 25) which we can use to determine whether we're legitimately flying the plane, or whether we're in [slew mode](https://www.flightsim.com/vbfs/showthread.php?286073-What-the-heck-is-quot-slew-quot-mode) or checking out our plane using the special [drone camera](https://forums.flightsimulator.com/t/how-to-using-the-drone-cam-tips-tricks/128165), etc.
 
 So let's query the python server for that variable!
 
 ```javascript
+// Step 3: are we in-game?
 async function checkForPlaying() {
   const { SIM_RUNNING: runFlag } = await getAPI(`SIM_RUNNING`);
   if (runFlag >= 3) {
     find(`.in-game`).textContent = `yes!`;
-    waitForEngines();
+    return waitForEngines();
   }
-  else setTimeout(checkForPlaying, 1000);
+  // If we're not in game, check again one second from now.    
+  setTimeout(checkForPlaying, 1000);
+}
+
+// Step 4: preflight check... are the engines running?
+async function waitForEngines() {
+  // we'll add this code in the next section!
 }
 ```
 
@@ -306,17 +354,15 @@ Of course, just because we're in-game doesn't mean we're actually flying yet: so
 
 To check for this, we query MSFS for the following values first:
 
-1. `ENGINE TYPE`: This tells us what kind of engine (including "none" because gliders are a thing!) we have.
-2. `ENG_COMBUSTION:1`: Planes can have up to four engines so these four
-3. `ENG_COMBUSTION:2`: values let us see whether any of them are fired
-4. `ENG_COMBUSTION:3`: up or not, because even if a plane has four engines,
-5. `ENG_COMBUSTION:4`: it might not use all of them.
+1. `ENGINE TYPE`: This tells us what kind of engine we have, bearing in mind that the answer _might_ be "this aircraft has no engines" (because gliders are a thing!).
+2. `ENG_COMBUSTION:1`, `ENG_COMBUSTION:2`, `ENG_COMBUSTION:3`, and `ENG_COMBUSTION:4`: separate engine indicators.
 
-With these values, we can "wait" with reporting the other twelve values until we know the plane's "working":
+Planes can have up to four engines (... in MSFS) so these four values let us see whether any of them are fired up or not. Because remember: just because a plane has four engines, doesn't mean we're using all of them. With these values, we can "wait" with reporting all the other flight data until we know the plane's "working" (unless it's a glider, which has no engines, in which case we can just skip straight to flight monitoring).
 
 ```javascript
 const ENGINE_DATA = [`ENGINE_TYPE`, `ENG_COMBUSTION:1`, ... , `ENG_COMBUSTION:4`]
 
+// Step 4: preflight check... are the engines running?
 async function waitForEngines() {
   const data = await getAPI(...ENGINE_DATA);
   if (data.ENGINE_TYPE === 2) {
@@ -327,9 +373,15 @@ async function waitForEngines() {
   const enginesRunning = [1,2,3,4].some(id => data[`ENG_COMBUSTION:${id}`]));
   if (enginesRunning) {
     find(`.flying`).textContent = `yes!`;      
-      startMonitoringFlightData();
+    return startMonitoringFlightData();
   }
-  else setTimeout(waitForEngines, 1000);
+  // If the plane's not running, check again one second from now.
+  setTimeout(waitForEngines, 1000);
+}
+
+// Step 4b: start monitoring flight data
+async function startMonitoringFlightData() {
+  // we'll add this code in the next section!   
 }
 ```
 And with that, we can move on to our "flight analysis":
@@ -338,49 +390,80 @@ And with that, we can move on to our "flight analysis":
 
 There's a whole bunch of parameters we can query MSFS for, so here are the ones we're going to be interested in (with the more elaborate documentation found on the MSFS SimConnect [Simulation Variables](https://docs.flightsimulator.com/html/Programming_Tools/SimVars/Simulation_Variables.htm) page):
 
-1. `AIRSPEED_TRUE`: how fast the plane is flying, in knots (1kts being 101.269 feet per minute)
-1. `GROUND_ALTITUDE`: how high above (or below) sea level the ground below the plane sits, in feet.
-1. `INDICATED_ALTITUDE`: how high the plane claims it's flying, in feet (which might be wrong!)
-1. `PLANE_ALT_ABOVE_GROUND`: how high above the ground we are, in feet.
-1. `PLANE_BANK_DEGREES`: how much we're pitching left or right, in radians.
-1. `PLANE_HEADING_DEGREES_MAGNETIC`: The indicated compass direction that the plane's flying in, in radians.
-1. `PLANE_HEADING_DEGREES_TRUE`: The direction we're _actually_ heading in, because a compass can be off by quite a bit.
-1. `PLANE_LATITUDE`: our north/south GPS coordinate.
-1. `PLANE_LONGITUDE`: our east/west GPS coordinate.
-1. `PLANE_PITCH_DEGREES`: how much the plane is pitching up or down, in radians. But because of how flight works, the plane pitching up does not necessarily mean we're actually _moving_ up. For that, we want...
-1. `VERTICAL_SPEED`: the speed at which we're either gaining or losing altitude, in feet per minute.
-1. `SIM_ON_GROUND`: this tells us whether the plane is actually on the ground or in the air.
+| varname | description |
+| ---- | ---- |
+| AILERON_TRIM_PCT | How much the plane's been set to lean, in order to counteract things like the propeller pulling the plane left or right. |
+| AIRSPEED_TRUE | How fast the plane is flying, in knots (1kts being 101.269 feet per minute) |
+| AUTOPILOT_MASTER | Is the built-in autopilot on? (if there is one!) |
+| ELEVATOR_TRIM_POSITION | How much the plane's been set to pitch, in order to counteract things like weight distribution and airspeed making the plane tilt up or down. |
+| GPS_GROUND_TRUE_TRACK | The heading our plane is flying in, which is _not_ always the heading our plane is _pointing_ in (thanks, cross wind). |
+| GROUND_ALTITUDE | How high the ground underneath us is with respect to sea level, in feet |
+| INDICATED_ALTITUDE | How high the plane claims it's flying, in feet (which might be wrong!) |
+| PLANE_ALT_ABOVE_GROUND | How high above the ground we are, in feet. |
+| PLANE_BANK_DEGREES | How much we're pitching left or right, in radians. |
+| PLANE_HEADING_DEGREES_MAGNETIC | The compass heading that the plane thinks it's pointing in, in radians. |
+| PLANE_HEADING_DEGREES_TRUE | The heading we're _actually_ pointing in, based on GPS information. |
+| PLANE_LATITUDE | Our north/south GPS coordinate. |
+| PLANE_LONGITUDE | Our east/west GPS coordinate. |
+| PLANE_PITCH_DEGREES | How much the plane is pitching up or down, in radians. (But because of how flight works, the plane pitching up does not necessarily mean we're actually _moving up). |
+| SIM_ON_GROUND | This tells us whether the plane is on the ground or in the air. |
+| STATIC_CG_TO_GROUND | The distance from our plane's center of gravity (CG) to the actual ground. |
+| TITLE | The make and model of our plane. |
+| TURN_INDICATOR_RATE | How many degrees per second our plane's heading is changing. |
+| VERTICAL_SPEED | The speed at which we're either gaining or losing altitude, in feet per minute. |
 
-With these twelve values, we can do a lot! Let's poll the server for these values every second, and then process the data we get back:
+We can do a lot with these values! Let's poll the server for them every second, and then process the data we get back:
 
 ```javascript
-const FLIGHT_DATA = [`AIRSPEED_TRUE`, `GROUND_ALTITUDE`, ... , `SIM_ON_GROUND` ]
+let cachedData;
+const FLIGHT_DATA = [`AILERON_TRIM_PCT`, `AIRSPEED_TRUE`, ... , `VERTICAL_SPEED` ]
 
+const { PI } = Math;
+const TAU = 2 * PI;
+const degrees = v => 360 * v/TAU;
+
+// Step 4b: start monitoring flight data
 async function startMonitoringFlightData() {
-  setInterval(() => update(await getAPI(...FLIGHT_DATA)), 1000);
+  // Start our "main loop" for polling and then processing flight data
+  setInterval(() => {
+    const flightData = await getAPI(...FLIGHT_DATA);
+    update(flightData);
+  }, 1000);
 }
 
 async function update(data) {
+  cachedData = data;
+    
   // Get our orientation information
   const orientation = {
-    heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
-    pitch: deg(data.PLANE_PITCH_DEGREES),
-    bank: deg(data.PLANE_BANK_DEGREES),
+    airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
+    heading: degrees(data.PLANE_HEADING_DEGREES_MAGNETIC),
+    trueHeading: degrees(data.PLANE_HEADING_DEGREES_TRUE),
+    turnRate: degrees(data.TURN_INDICATOR_RATE),
+    pitch: degrees(data.PLANE_PITCH_DEGREES),
+    trim: data.ELEVATOR_TRIM_POSITION,
+    aTrim: data.AILERON_TRIM_PCT,
+    bank: degrees(data.PLANE_BANK_DEGREES),
+    yaw: degrees(data.PLANE_HEADING_DEGREES_MAGNETIC - data.GPS_GROUND_TRUE_TRACK),
   };
 
-  // And our flight details
+  // And some flight details
   const details = {
     lat: data.PLANE_LATITUDE,
     long: data.PLANE_LONGITUDE,
-    airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
-    speed: data.AIRSPEED TRUE,
+    speed: data.AIRSPEED_TRUE,
     vspeed: data.VERTICAL_SPEED,
     alt: data.INDICATED_ALTITUDE,
-    palt: data.PLANE_ALT_ABOVE_GROUND,
+    palt: data.PLANE_ALT_ABOVE_GROUND - data.STATIC_CG_TO_GROUND,
     galt: data.GROUND_ALTITUDE,
+    title: data.TITLE,
   };
 
   doCoolThingsWithOurData(orientation, details);
+}
+
+async function doCoolThingsWithOurData(orientation, details) {
+  // Let's do some cool things with our data here!
 }
 ```
 
@@ -393,8 +476,11 @@ In order to make sure we know what our autopilot will be doing (remember, that w
 ```javascript
 // Leaflet creates a global "L" object to work with.
 const DUNCAN_AIRPORT = [48.756669, -123.711434];
+
+// Set up leaflet to tie into the <div id="map"></div> we have sitting in our index.html:
 const map = L.map("map").setView(DUNCAN_AIRPORT, 15);
 
+// Using OpenStreetMap tiles for our map:
 L.tileLayer(
   `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, {
   maxZoom: 19,
@@ -402,13 +488,15 @@ L.tileLayer(
   }
 ).addTo(map);
 
+// With a little plane icon that we can use to show where we are:
 const plane = L.marker(DUNCAN_AIRPORT, {
   icon: L.divIcon({
   html: `<img id="plane-icon" src="airplane.png">`
   }),
 }).addTo(map);
 
-function doCoolThingsWithOurData(orientation, details) {
+async function doCoolThingsWithOurData(orientation, details) {
+  // Cool thing 1: update the map to show where we are
   const { lat, long } = details;
   const pair = [lat, long];
   map.setView(pair);
@@ -447,12 +535,18 @@ and update our JS accordingly:
 
 ```javascript
 function doCoolThingsWithOurData(orientation, details) {
+  // Cool thing 1: update the map to show where we are
+  const { lat, long } = details;
+  const pair = [lat, long];
+  map.setView(pair);
+  plane.setLatLng(pair);
 
-  ...
-
+  // Cool thing 1.1: with the plane pointing the right way...
   const { heading } = orientation;
-  const planeIcon = document.querySelector(`#plane-icon`);
-  planeIcon.style.setProperty(`--deg`, heading | 0);
+  const planeIcon = document.getElementById(`#plane-icon`);
+  planeIcon.style.setProperty(`--deg`, heading | 0));
+  // Note that `... | 0` converts numbery things to 32 bit integers,
+  // while conveniently turning anything that isn't a number into 0.
 }
 ````
 
@@ -464,45 +558,56 @@ Now our plane will not just be pinned in the right place, but it'll also facing 
   </a>
   <figcaption style="font-style: italic; text-align: center;">Waiting for take-off at Duncan airport!</figcaption>
 </figure>
+### What's our plane doing... but in scientific detail!
 
 
-
-That just leaves graphing some flight information every time the `doCoolThingsWithOurData` function runs. The easiest plotting framework is actually built right into HTML: SVG. All we need to do is track `<path>` elements that we add new values to every time there's new data. Rather than spend time on how to write that code, I'm just going to drop [this link](https://gist.github.com/Pomax/de7707ae17c76caae4dabf7806dbd816) here, which is our entire grapher in <200 lines of code. Mixing that in:
+That just leaves graphing some flight information every time the `doCoolThingsWithOurData` function runs. The easiest plotting framework is actually built right into HTML: SVG. All we need to do is track `<path>` elements that we add new values to every time there's new data. Rather than spend time on how to write that code, I'm just going to drop [this link](https://gist.github.com/Pomax/de7707ae17c76caae4dabf7806dbd816) here, which is our entire grapher in less than 250 lines of code. Mixing that in:
 
 ```javascript
 import { setupGraph } from "./svg-graph.js";
 let graph;
 
-...
-
+// Step 4b: start monitoring flight data
 async function startMonitoringFlightData() {
-  // set up our graph before we start listening for flight data
+  // set up our graph before we start listening for flight data...
   graph = setupGraph(document.body, 600, 400);
+  graph.setProperties({
+      label: `ground`,
+      min: 0,
+      max: 5000,
+      fill: {
+        baseline: 0,
+        color: `saddlebrown`,
+      }
+    }, {
+      label: `altitude`,
+      min: 0,
+      max: 5000,
+    },{
+      label: `vspeed`,
+      limit: 1500,
+    },
+    ...
+  );
   graph.start();
-  graph.setProperties(`ground`, {
-  fill: {
-    baseline: 0,
-    color: `saddlebrown`,
-  },
-  });
-
-  // ...then start listening for flight data
-  setInterval(() => update(await getAPI(...FLIGHT_DATA)), 1000);
+    
+  // ...then start our "main loop" for polling and then processing flight data
+  setInterval(() => {
+    const flightData = await getAPI(...FLIGHT_DATA);
+    update(flightData);
+  }, 1000);
 }
-
-...
 
 async function doCoolThingsWithOurData(vector, orientation) {
   const { alt, galt, vspeed } = vector;
   const { heading, pitch, bank, yaw, trim } = orientation;
 
-  ...
-
-  graph.addValue(`altitude`, alt);
-  graph.addValue(`pitch`, pitch);
-  graph.addValue(`trim`, trim);
-  graph.addValue(`bank`, bank);
+  // Cool thing 2: do a science vizualizer!
   graph.addValue(`vspeed`, vspeed);
+  graph.addValue(`bank`, bank);
+  graph.addValue(`trim`, trim);
+  graph.addValue(`pitch`, pitch);
+  graph.addValue(`altitude`, alt);
   graph.addValue(`ground`, galt);
 }
 ```
@@ -517,11 +622,11 @@ And there we go:
 </figure>
 
 
-We're now finally ready to not just write our autopilot, but also see what it's doing, which is crucially important to understanding what your code's doing. Or doing wrong... O_O
+We're now finally ready to not just write our autopilot, but also see what it's doing, which is crucially important to understanding what your code's doing... Or doing wrong.
 
 ## Creating an autopilot
 
-Before we make our autopilot, we're actually going to switch languages. Don't get me wrong: we _could_ write our autopilot in JS, but we'd much rather not have to deal with the delay of network requests from JS to our Python API server, or the irregular timing of a `setInterval` or `setTimeout` (which is only guaranteed to wait _at least_ the indicated number of milliseconds, _not_ that it will fire after the indicated number of milliseconds). In this case, in order to make sure our code runs fast, and can run at a high speed, steady interval, it's much easier to work in Python. After all, it's talking directly to MSFS.
+For making our autopilot, we're actually going to switch languages back to Python. Don't get me wrong: we _could_ write our autopilot in JS, but we'd much rather not have to deal with the delay of network requests from JS to our Python API server, or the irregular timing of a `setInterval` or `setTimeout` (which is only guaranteed to wait _at least_ the indicated number of milliseconds, _not_ that it will fire after the indicated number of milliseconds). In this case, in order to make sure our code runs fast, and can run at a high speed, steady interval, it's much easier to work in Python. After all, it's talking directly to MSFS.
 
 As such, we're going to extend our little python server to do a bit more: it's going to accept autopilot _instructions_ from a web page, but it'll run the autopilot _logic_ itself. We're going to create an `Autopilot` class that will house all the logic, and we'll update our `do_GET` and `do_POST` code to route anything that comes in for `/autopilot` to that class:
 
@@ -551,21 +656,21 @@ def do_POST(self):
 
   # is this an autopilot instructions?
   if '/autopilot' in self.path:
-  global auto_pilot
-  if query == '':
-    ap_state = auto_pilot.toggle_autopilot()
-    result = {'AP_STATE': ap_state}
-  else:
-    query = parse_qs(query)
-    ap_type = query['type'][0]
-    ap_target = query['target'][0] if 'target' in query else None
-    if ap_target is not None:
-      value  = float(ap_target) if ap_target != 'false' else None
-      ap_state = auto_pilot.set_target(ap_type, value)
+    global auto_pilot
+    if query == '':
+      ap_state = auto_pilot.toggle_autopilot()
+      result = {'AP_STATE': ap_state}
     else:
-      ap_state = auto_pilot.toggle(ap_type)
-    result = {'AP_TYPE': ap_type, 'AP_STATE': ap_state}
-  return self.wfile.write(json.dumps(result).encode('utf-8'))
+      query = parse_qs(query)
+      ap_type = query['type'][0]
+      ap_target = query['target'][0] if 'target' in query else None
+      if ap_target is not None:
+        value  = float(ap_target) if ap_target != 'false' else None
+        ap_state = auto_pilot.set_target(ap_type, value)
+      else:
+        ap_state = auto_pilot.toggle(ap_type)
+      result = {'AP_TYPE': ap_type, 'AP_STATE': ap_state}
+    return self.wfile.write(json.dumps(result).encode('utf-8'))
 
   ...
 
@@ -578,7 +683,7 @@ def run():
   ...
 ```
 
-You can see that there's going to be three important function:
+You can see that there's going to be three important functions:
 
 - `autopilot.get_state()` which will give us a JSON readback of the various settings in our autopilot:
 
@@ -611,7 +716,7 @@ You can see that there's going to be three important function:
     ```
 
 
-With that out of the way, we can now really, actually, _actually_ get down to the business of thinking about, and implementing, our autopilot code.
+With that out of the way: how do we implement the actual autopilot?
 
 ## How does an autopilot work?
 
@@ -630,9 +735,9 @@ Instead, we're going to implement our autopilot as a _reactionary_ system: it lo
 
 Of course, a real autopilot does this monitoring continuously. However, we're going to have contend with only being able to run a few times per second, and so as not to overload MSFS, we're only going to run twice a second. Our autopilot's going to be pretty coarse! ...and yet, we'll be able to make it work.
 
-### The backbone of this code: constrained mapping
+### The backbone of our Autopilot code: constrain-mapping
 
-Before we do anything else, let's first look at what is probably _the_ single most important function in our autopilot: `constraint_map`. This function takes a value, relative to some interval `[a,b]`, and maps it to the corresponding value in a different interval `[c,d]`, such that `a` maps to `c`, `b` maps to `d`, anything in between `a` and `b` is some new value between `c` and `d`, but crucially, _any value less than `a` still maps to `c` and any value greater than `b` still maps to `d`_ :
+Before we do anything else, let's first look at what is probably _the_ single most important function in our autopilot: `constraint_map`. This function takes a value, relative to some interval `[a,b]`, and maps it to the corresponding value in a different interval `[c,d]`, such that `a` maps to `c`, `b` maps to `d`, anything in between `a` and `b` is some new value between `c` and `d`, but crucially, any value less than `a` still maps to `c` and any value greater than `b` still maps to `d`:
 
 ![constraint mapping](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\constraint_map.png)
 
@@ -642,7 +747,7 @@ And that last part is critically important: if we're going to write an autopilot
 def map(v, a, b, c, d):
   l1 = (b-a)
   if l1 == 0:
-    return c
+    return (c + d) / 2
   l2 = (d-c)
   return c + (v-a) * l2/l1
 
@@ -655,24 +760,30 @@ def constrain_map(v, a, b, c, d):
   return constrain(map(v, a, b, c, d), c, d)
 ```
 
-And then just because this is also going to be important: when we're mapping from some interval "around zero" (for example, between `-max_bank` and `max_bank`) to another interval "around zero" (for example, between `-step_size` and `step_size`), there will be cases where we don't actually want zero itself. For instance, if we need to nudge an aircraft left a little, based on how close it is a target heading, we don't want the correction to become so close as to basically do nothing, just because we're getting close to a target heading. As such, we're going to extend `constraint_map` with one an optional "forbidden" zone:![constraint mapping with a forbidden interval](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\constraint_map_limited.png)
+And then just because this is also going to be important: when we're mapping from some interval "around zero" (for example, between `-max_bank` and `max_bank`) to another interval "around zero" (for example, between `-step_size` and `step_size`), there will be cases where we don't actually want zero itself. For instance, if we need to nudge an aircraft left a little, based on how close it is a target heading, we don't want the correction to become so close as to basically do nothing, just because we're getting close to a target heading. As such, we're going to extend `constraint_map` with one an optional "forbidden" zone:
+
+![constraint mapping with a forbidden interval](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\constraint_map_limited.png)
 
 For which the code gets the following update:
 
 ```python
 def constrain_map(v, a, b, c, d, e1=None, e2=None):
     val = constrain(map(v, a, b, c, d), c, d)
+    # Is there a "forbidden interval"?
     if e1 is None or e2 is None:
         return val
-    mid = (e1 + e2) / 2
+    # Is this a normal value?
     if val < e1:
         return val
     if val > e2:
         return val
+    # value in the "forbidden interval"?
+    mid = (e1 + e2) / 2
     if val > e1 and val <= mid:
         return e1
     if val < e2 and val >= mid:
         return e2
+    # while we can't really get here, you always want to specify what should happen anyway.
     return val
 ```
 
@@ -776,7 +887,7 @@ def hold_vertical_speed(self, state):
   target_VS = 0
     
   # Determine the difference in vertical speed we need to overcome,
-  # and use that to constrain are maximum allowed vertical acceleration.
+  # and use that to constrain our maximum allowed vertical acceleration.
   diff = target_VS - VS
   max_dVS = 1 + constrain_map(abs(diff), 0, 100, 0, max_dVS - 1)
     
@@ -799,7 +910,7 @@ First, notice the `trim_limit` value: every aircraft has different pitch trim co
 
 For instance, the [Cessna 310R](https://en.wikipedia.org/wiki/Cessna_310) has a min/max trim value of 20, with 20 corresponding to 100% trim and -20 corresponding to -100% trim. We can thus use trim corrections values in increments of 1/1000 (corresponding to moving the trim by 0.1% each step) and have decent control. However, the [Britten-Norman Islander](https://en.wikipedia.org/wiki/Britten-Norman_BN-2_Islander) has a min/max trim of only 6, so if we just blindly used the same step values that we know work for the 310, we'd actually be trimming over three times as hard... that plane would basically be bouncing up and down in the air instead of converging on a steady vertical speed.
 
-Also, some planes don't "officially" have trim, like the [Top Rudder 103Solo](https://www.toprudderaircraft.com/), and so their trim limit as reported by MSFS is simply zero... but _they can still be trimmed_ by explicitly setting trim values. So for those planes we just "guess": we set their trim limit to 10 and hope that's a reasonable number. There's not much else we can do.
+Also, some planes don't "officially" have trim, like the [Top Rudder 103 Solo](https://www.toprudderaircraft.com/) ultralight, and so their trim limit as reported by MSFS is simply zero... but _they can still be trimmed_ by explicitly setting trim values. So for those planes we just "guess": we set their trim limit to 10 and hope that's a reasonable number. There's not much else we can do.
 
 So with that out of the way, the vertical hold approach consists of:
 
@@ -812,6 +923,30 @@ Of course,  that "zero" is in quotes because the air itself is always a factor (
 And... that's it. Again, not a lot of code, but it does what we need it to, updating our elevator trim so that we end up flying in a straight line. Combined with level mode, we're basically done! This is an autopilot!
 
 There are a few more "magic numbers" that we can fiddle with here, just like before (and you totally should! Just.. not for days) but aside from fiddling and twiddling, this is it. We implemented an old school autopilot.
+
+### Analysing our code so far
+
+Writing code is well and good, but how good is it? Let's fly some planes and see what the graphs tell us. Let's start with the Top Rudder 103 Solo ultralight. This plane has a throttle, and a stick, and that's basically it, so what happens if we tell it that it actually has an autopilot and we start trimming it to fly fully level?
+
+![image-20230128123402555](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\top-rudder-vsh-lvl.png)
+
+We see the vertical speed (the violently shaky pink line) trying to stay near zero, but we can also see that ultralight aircraft are... well, ultra light. The spikes in vspeed are from updrafts and pervasive wind, resulting in our altitude (The green line at the top) not actually being a straight line until we hit smooth air. Looking at what happens over time, we see that our code is doing its best to get us back to zero... and despite the wind's best efforts, succeeding at it.
+
+Similarly, we see that we're trying to fly straight (the black center line showing how much we're banking), but that our heading (in red at the bottom) is a bit wibbly: again, when you're this light, you're basically pretending not to be a kite. However, we also see our code doing a pretty good job at keeping us level even if wind gusts are blowing us around.
+
+What about a heavier aircraft, like the DHC-2 Beaver?
+
+![image-20230127123609777](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\beaver-vsh-lvl.png)
+
+Turns out having some more mass lets the autopilot code converge to a stable situation much faster, with the wind having less of an effect on the plane from moment to moment, but it's still going to jostle us around. We can see there's a constant updraft, but our vertical hold code at least trying to push us down, "winning" over the updraft and pushing us back to zero, at which point the updraft wins again, rinse and repeat until the updraft's gone. However, in terms of our leveling code, our heading is much more stable: cross wind has far less of an effect on a heavier plane.
+
+So what about a faster plane? Let's see what happens for the Cessna 310R.
+
+![image-20230127125236491](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\310r-vsh-lvl.png)
+
+We start into the autopilot with a significant vertical speed, so we see an initial correction that converges about as fast as the Beaver, after which we see the opposite of the Beaver's updraft behaviour: the vertical hold code paired with the speed of the plane means that we mostly "win" once our vertical hold code kicks in, and we dip below zero. Our overall altitude drops a little, but not as much as the Beaver's went up. We also see that going fast really helps in keeping you going straight: our heading is a much straighter line than for the Beaver, showing significantly less drift.
+
+Confident that we have a reasonable enough base to build on, let's move on and enhance our autopilot code with heading and altitude hold modes.
 
 ### Adding heading mode
 
@@ -878,6 +1013,26 @@ In this block, we see the same idea as we applied to bank angles: there is our t
 
 And that's it, again: not _actually_ a lot of code, but we now have a heading mode and we can tell our plane to fly where _we_ want it to go, rather than where _it_ wants to go =)
 
+### How well does this fly?
+
+Let's look at some graphs again to see how things behave, We'll get the planes to fly mostly level with a heading of 60 manually first, then engage the autopilot with vertical hold and heading mode engaged for 60, then adjust our heading to 70, 100, 200, and back to 60.
+
+First up, the Top Rudder 103 Solo:
+
+![image-20230127135213186](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\top-rudder-vsh-hdg.png)
+
+We see that it's actually doing pretty well! Jumping 10, 30, 100, and 140 degrees all seem to get to their target fast enough, there's a bit of overshoot, and a bit of an oscillating convergence, but for the most part it's doing what it needs to do (especially for a plane that technically has no trim controls). We do see a rather prolonged oscillation at the end, but that's mostly because that was right when the plane was flying over a river delta and the wind decided to have some fun. 
+
+What about the Beaver?
+
+![image-20230127140531988](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\beaver-vsh-hdg.png)
+
+Slightly less overshoot, and similar heading holding action. Nice! So what about our (much) faster 130R?
+
+![image-20230127144635060](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\310r-vsh-hdg.png)
+
+Similar curves to the Beaver: pretty good!
+
 ### Implementing Altitude Hold
 
 Which brings us to the last mode: altitude hold. And if you're thinking "are we going to bolt some code on top of vertical hold, the same way we bolted some heading code on top of level mode?" then you're exactly right!
@@ -906,98 +1061,37 @@ def hold_altitude(auto_pilot, state):
   
 ```
 
-And that's it, even less code than heading mode! We have everything else already in place, including making sure of safe vertical speeds, so all we need to do is make sure that we set a non-zero vertical speed as target speed while we're not near our target altitude, and then slowly decrease that to (near) zero as we reach the desired altitude. The only "special" part of this code is that we're using two different "speed zones": if we're more than 200 feet above or below the target, we set a target speed that 
+And that's it, even less code than heading mode! We have everything else already in place, including making sure of safe vertical speeds, so all we need to do is make sure that we set a non-zero vertical speed as target speed while we're not near our target altitude (capped once we reach an altitude difference of 200 feet)  and then slowly decrease that to (near) zero as we reach the desired altitude.
+
+### How well does this fly?
+
+Let's find out! Again, we'll profile our three aircraft, this time setting a target heading of 60 degrees with target altitude of 1500 feet, then once we get there, we'll pop up to 2500 feet, and then once we get to that, we'll drop back to 1500 feet.
+
+First up again is the Top Rudder 103 Solo:
+
+![image-20230127152017802](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\rudder-crash.png)
+
+Oh dear...
+
+![image-20230127152105284](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\rudder-crash-graph.png)
+
+The Top Rudder might be nimble, but asking it to pretend it's a plane capable of transitioning 1000 feet at a time is maybe asking a little too much of it. We can see it trying to climb, but as it climbs, it's losing speed, and even though it's only climbing at a mere 300 feet per minute, at some point our airspeed drops to something low enough that the aircraft stalls, and we end up in a death spiral. We can fairly easily recover from this if we turn off the autopilot, but if we keep it on... happy birthday to the ground. The lesson: even if we can cram an autopilot into an ultralight, we still need to be realistic about what it can do =)
+
+So what about the Beaver?
+
+![image-20230127165506535](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\beaver-alt-hdg.png)
+
+Marking the target altitude with the blue block line up top, and our vertical speed in wibbly pink, this looks reasonably good: when we tell the autopilot to switch altitudes from 1500 feet to 2500 feet, we incur a positive vertical speed, keep it positive for as long as necessary, and then ramp back down to zero once we reach our new altitude. And then running the reverse shows the same behaviour, just mirrored.
+
+So let's look at what the 310R does with this code:
+
+![image-20230127164314069](C:\Users\Mike\Documents\Git\projects\are-we-flying\docs\310r-alt-hdg.png)
+
+A similar story, although we're seeing it take an awfully long time to correct for the over/undershoot. The plane recovers from less than 100 feet to 50 quickly enough, but then lingers at the wrong altitude seemingly forever. That's annoying, but not a deal breaker, and we've spent a fair amount of time on this already, so...
 
 ## We have an autopilot!
 
-Now, it's not a *great* autopilot, but it works (for the most part) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do! In fact, mix in some [Open-Elevation](https://open-elevation.com/) based on "current location" and "location 10 nautical miles ahead of me", get the elevation map for the next 10 miles, and then pick a safe elevation to hold, now we have "terrain follow" mode... there's a *lot* of fun left to be had!
-
-
-
-The "upside down" section doesn't work at the moment. We need better leveling code for that...
-
-
-
-## Bonus round: Level and Altitude Hold... upside down??
-
-In fact, let's have some more fun, because sure, having a normal autopilot is nice, but ever heard of an autopilot that'll keep you flying upside down? Neither have I: let's make one! Of course, most aeroplanes won't be able to pull that stunt off, but what if you're in an actual stunt plane? Like the fictional [Gee Bee R3 Special](https://flightsim.to/product/gee-bee-r3-special)?
-
-<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
-  <a href="gee-bee-r3.png" target="_blank">
-      <img src="gee-bee-r3.png" alt="A Gee Bee R3 Special"/>
-  </a>
-  <figcaption style="font-style: italic; text-align: center;">Not for the faint of heart...</figcaption>
-</figure>
-
-This thing will go naught to ludicrous speed near instantly, and will happily fly upside down for much longer than you can. So, let's make some magic happen. First off we're going to add a special case to the `toggle()` code, so that if we toggle `INV` (for "invert") we set some new values:
-
-```python
-def toggle(self, ap_type: str) -> bool:
-  ...
-  if ap_type == INVERTED_FLIGHT:
-    self.inverted = -1 if self.modes[ap_type] else 1
-    self.lvl_center = 0
-    sanity_trim = -0.1 if self.inverted else 0.05
-    self.api.set_property_value('ELEVATOR_TRIM_POSITION', sanity_trim)
-  ...
-```
-
-We use the `inverted` value not as a true or false, but as a multiplier factor for other values: if we're flying inverted, some things will need to be multiplied by -1 to make sure the plane corrects in the right direction. There's also a `sanity_trim` that is used to flip our pitch trim down by *a lot*, because once we're upside down, our nose needs to point down, not up. If we don't do this, it's going to take our plane, going at breakneck speed, probably longer to correct for pitch than it will take it to hit the ground =)
-
-With that set up, let's update our Level Hold:
-
-```python
-def fly_level(self, bank: float, turn_rate: float, a_trim: float, heading: float) -> None:
-  factor = self.inverted
-  center = 0 if factor == 1 else pi
-  bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
-  self.lvl_center += constrain_map(bank, -5, 5, -2, 2)
-
-  if self.modes[HEADING_MODE]:
-    ...
-
-    if factor == -1:
-      if (hdiff < 0 and turn_rate > turn_limit) or (hdiff > 0 and turn_rate < -turn_limit):
-        self.lvl_center -= 1.1 * bump
-
-  self.api.set_property_value('AILERON_TRIM_PCT', (self.lvl_center + bank)/180)
-```
-
-That's a bit more code than before, but when we're upside down things get a little more complicated because flying upside down means we're flying in an unstable configuration: if we bank right side up, the plane will slowly try to right itself because of how it's carving a path through the air, always returning to a stable flight path. However, when we're upside down, the plane will do the exact same thing... except now that'll constantly try to flip it over, and we'd prefer it didn't.
-
-First off, we have a new way to calculate our bank angle, because we now need that angle relevative to "being upside down" rather than "right side up". And while right side up has an ideal bank angle of zero, flying inverted has _two_ ideal angls: -π and π. Both represent a 180 degree turn relative to 0, one left, one right, with -π = π for the purpose of bank angle. To deal with that, we use two separate calculations to find how far we're banking relative to "down" based on whether the plane's banked left or right.
-
-With that taken care of, we can now mostly rely on the code we already had, but we need some additional code to put in that protection against the plane desperately trying to _stop_ flying inverted: if the plane's trying to tip too much, we simply kick it back a little more than it tried to tip.
-
-Then we'll also need to update Altitude Hold:
-
-```
-def hold_vertical_speed(self, alt: float, speed: float, vspeed: float, trim: float) -> None:
-  ...
-  
-  factor = self.inverted
-  lower_limit = 5 * speed
-  upper_limit = 10 * speed - self.vs_max_correction
-  vs_max = upper_limit if factor * alt_diff >= 0 else lower_limit
-
-  ...
-  correct = 0
-
-  # Base our step size on how fast this plane is going.
-  step = factor * map(speed, 50, 150, MSFS_RADIAN/200, MSFS_RADIAN/100)
-  
-```
-
-And that's it, we just need to make sure that we set a sensible `vs_max` that, when we're flying normally, allows for faster ascent than descent, but when we're flying upside down, flips that. Then, we also make sure to flip the sign on our corrective step, so that "trimming up" actually trims us down, and "trimming down" actually trims us up. Because we're upside down. 
-
-And that's it, we have an inverted autopilot. How crazy is that??
-
-<figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
-  <a href="gee-bee-r3-inverted.png" target="_blank">
-    <img src="gee-bee-r3-inverted.png" alt="The Gee Bee R3 Special flying upside down"/>
-  </a>
-  <figcaption style="font-style: italic; text-align: center;">The Gee Bee R3 doing what it does best</figcaption>
-</figure>
+Now, it's not a *great* autopilot, but it works (for the most part, for most planes =) and more importantly, it gives us something to play with. We can refine the way heading mode and altitude hold work, we can tweak numbers to see what happens, we can invent new interpolation functions to use instead of `constrain_map`, there's a lot we can do! In fact, mix in some [Open-Elevation](https://open-elevation.com/) based on "current location" and "location 10 nautical miles ahead of me", get the elevation map for the next 10 miles, and then pick a safe elevation to hold, now we have "terrain follow" mode... there's a *lot* of fun left to be had!
 
 # And that's it for now
 
@@ -1008,3 +1102,5 @@ If you made it this far in this write-up, thank you for reading, and I hope you 
 As for me, I'm going to fly a [Top Rudder](https://www.toprudderaircraft.com/103sologallery) around New Zealand a bit, then maybe hang out in my backyard on Vancouver Island in a [DHC-2 Beaver](https://www.vikingair.com/viking-aircraft/dhc-2-beaver) with floats, and then maybe do some exploratory flying in a [Kodiak 100](https://kodiak.aero/kodiak/).
 
 Say hi if you see me!
+
+(And if you have ideas on how to improve this code without substantially lengthening it, let me know! It's easy enough to write code that has a million code paths for specific combinations of factors, but writing as little code as possible to cover as many planes as possible is a far more challenging task indeed)

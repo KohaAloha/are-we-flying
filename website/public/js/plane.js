@@ -51,6 +51,7 @@ const FLIGHT_PROPS = [
   "PLANE_LONGITUDE",
   "PLANE_PITCH_DEGREES",
   "SIM_ON_GROUND",
+  "TURN_INDICATOR_RATE",
   "VERTICAL_SPEED",
 ];
 
@@ -229,30 +230,30 @@ export class Plane {
           },
         },
         {
-          label: `altitude`,
+          labels: `altitude, atarget`,
           min: 0,
           max: 5000,
         },
         {
-          label: `trim`,
-          min: -50,
-          max: 50,
-        },
-        {
-          label: `atrim`,
-          min: -50,
-          max: 50,
+          labels: `trim, atrim`,
+          limit: 50,
         },
         {
           label: `bank`,
-          min: -40,
-          max: 40,
+          limit: 40,
+        },
+        {
+          label: `turn rate`,
+          limit: 6,
         },
         {
           label: `vspeed`,
-          min: -1500,
-          max: 1500,
-        }
+          limit: 1500,
+        },
+        {
+          labels: `heading, htarget`,
+          limit: 180,
+        },
       );
       graph.start();
     }
@@ -281,6 +282,7 @@ export class Plane {
         data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
       heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
       trueHeading: deg(data.PLANE_HEADING_DEGREES_TRUE),
+      turnRate: deg(data.TURN_INDICATOR_RATE),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       trim: data.ELEVATOR_TRIM_POSITION,
       aTrim: data.AILERON_TRIM_PCT,
@@ -325,8 +327,16 @@ export class Plane {
     this.lat = lat;
     this.long = long;
 
-    const { airBorn, bank, pitch, trim, aTrim, heading, trueHeading } =
-      this.orientation;
+    const {
+      airBorn,
+      bank,
+      pitch,
+      trim,
+      aTrim,
+      heading,
+      trueHeading,
+      turnRate,
+    } = this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
@@ -347,8 +357,17 @@ export class Plane {
     graph.addValue(`trim`, trimToDegree(trim));
     graph.addValue(`atrim`, aTrim * 100);
     graph.addValue(`bank`, bank);
+    graph.addValue(`turn rate`, turnRate);
     graph.addValue(`vspeed`, vspeed);
     graph.addValue(`ground`, galt);
+    graph.addValue(`heading`, heading - 180);
+
+    if (this.autopilot.heading.value) {
+      let target = parseInt(this.autopilot.heading.value);
+      graph.addValue(`htarget`, target - 180);
+      target = parseInt(this.autopilot.altitude.value);
+      graph.addValue(`atarget`, target);
+    }
 
     this.autopilot.followTerrain(lat, long, trueHeading);
     this.lastUpdate = now;

@@ -51,10 +51,10 @@ class AutoPilot():
         return self.api.get_standard_property_value(name)
 
     def get_special(self, name):
-        return self.api.get_property_value(name)
+        return self.api.get(name)
 
     def set(self, name, value):
-        self.api.set_property_value(name, value)
+        self.api.set(name, value)
 
     def get_auto_pilot_parameters(self):
         state = {'AP_STATE': self.auto_pilot_enabled}
@@ -123,10 +123,12 @@ class AutoPilot():
         alt = self.get('INDICATED_ALTITUDE')
         vspeed = self.get('VERTICAL_SPEED')
         trim = self.get('ELEVATOR_TRIM_POSITION')
-        trim_limit = self.get('ELEVATOR_TRIM_UP_LIMIT')
         a_trim = self.get('AILERON_TRIM_PCT')
+        # Why are these two tuples instead of floats?
+        (trim_limit_up,) = self.get('ELEVATOR_TRIM_UP_LIMIT'),
+        (trim_limit_down,) = self.get('ELEVATOR_TRIM_DOWN_LIMIT'),
 
-        if (speed and bank and turn_rate and heading and alt and vspeed and trim and trim_limit and a_trim) is None:
+        if (speed and bank and turn_rate and heading and alt and vspeed and trim and a_trim and trim_limit_up and trim_limit_down) is None:
             return print(', '.join([
                 f'speed: {test(speed)}',
                 f'bank: {test(bank)}',
@@ -135,7 +137,7 @@ class AutoPilot():
                 f'alt: {test(alt)}',
                 f'vspeed: {test(vspeed)}',
                 f'trim: {test(trim)}',
-                f'limit: {test(trim_limit)}',
+                f'limit: {test(trim_limit_up)}, {test(trim_limit_down)}',
             ]))
 
         state = State(
@@ -146,7 +148,7 @@ class AutoPilot():
             turn_rate=turn_rate,
             vertical_speed=vspeed,
             pitch_trim=trim,
-            pitch_trim_limit=trim_limit,
+            pitch_trim_limit=[trim_limit_up, trim_limit_down],
             aileron_trim=a_trim,
             prev_state=self.prev_state,
         )

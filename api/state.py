@@ -19,7 +19,7 @@ class State:
     turn_rate = 0
     vertical_speed = 0
     pitch_trim = 0
-    pitch_trim_limit = 20
+    pitch_trim_limit = [10, -10]
     aileron_trim = 0
 
     # Value deltas ("per second"). These are automatically
@@ -41,7 +41,8 @@ class State:
             if prev_state is not None:
                 interval = self.call_time - prev_state.call_time
                 # Derive all our deltas "per second"
-                self.dBank = (self.bank_angle - prev_state.bank_angle) / interval
+                self.dBank = (self.bank_angle -
+                              prev_state.bank_angle) / interval
                 self.dTurn = (self.turn_rate - prev_state.turn_rate) / interval
                 self.dHeading = (self.heading - prev_state.heading) / interval
                 self.dV = (self.speed - prev_state.speed) / interval
@@ -70,6 +71,6 @@ class State:
                 f'dBank: {"{:.5f}".format(self.dBank)}',
                 f'dTurn: {"{:.5f}".format(self.dTurn)}',
                 f'dHeading: {"{:.5f}".format(degrees(self.dHeading))}°/s',
-                f'trim limit: {"{:.5f}".format(self.pitch_trim_limit)}',
+                f'trim limit: {"{:.5f}".format(self.pitch_trim_limit[0])}, {"{:.5f}".format(self.pitch_trim_limit[1])}',
             ]),
         ])

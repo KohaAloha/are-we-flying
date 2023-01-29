@@ -1,4 +1,6 @@
 function getAPI(...props) {
+  if (props.includes(`http://localhost:8080`))
+  console.trace();
   return fetch(`/api/?get=${props.join(`,`)}`).then((res) =>
     res.json()
   );

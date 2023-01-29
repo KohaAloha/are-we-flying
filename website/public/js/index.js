@@ -26,12 +26,20 @@ import("./maps.js").then(async ({ mapLayers }) => {
     });
   });
 
-  await getAPI(`http://localhost:8080`);
-  Questions.serverUp(true);
+  try {
+    await fetch(`http://localhost:8080`);
+    Questions.serverUp(true);
+  } catch (e) {
+    // do nothing
+  }
 
-  await getAPI(`http://localhost:8080/connected`);
-  Questions.msfsRunning(true);
-  new Plane(map, Duncan, 150);
+  try {
+    await fetch(`http://localhost:8080/connected`);
+    Questions.msfsRunning(true);
+    new Plane(map, Duncan, 150);
+  } catch (e) {
+    // do nothing
+  }
 });
 
 const autopilotURL = `http://localhost:8080/autopilot`;
