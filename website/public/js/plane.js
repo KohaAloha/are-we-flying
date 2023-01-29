@@ -3,6 +3,7 @@ import { getAPI, setAPI } from "./api.js";
 import { waitFor } from "./wait-for.js";
 import { Monitor } from "./event-monitor/monitor.js";
 import { Duncan } from "./locations.js";
+import { Autopilot } from "./autopilot.js";
 import { Gyro } from "./gyroscope.js";
 import { Trail } from "./trail.js";
 import { Questions } from "./questions.js";
@@ -11,7 +12,7 @@ import { MapMarker } from "./map-marker.js";
 import { setupGraph } from "./svg-graph.js";
 
 let L; // leaflet
-const { abs, sqrt, max } = Math;
+const { abs, cos, sin, sqrt, max, PI: π } = Math;
 let paused = false;
 let graph;
 
@@ -35,6 +36,7 @@ const ENGINE_PROPS = [
 ];
 
 const FLIGHT_PROPS = [
+  "AILERON_TRIM_PCT",
   "AIRSPEED_TRUE",
   "AUTOPILOT_MASTER",
   "ELEVATOR_TRIM_POSITION",
@@ -49,13 +51,17 @@ const FLIGHT_PROPS = [
   "PLANE_LONGITUDE",
   "PLANE_PITCH_DEGREES",
   "SIM_ON_GROUND",
+  "TURN_INDICATOR_RATE",
   "VERTICAL_SPEED",
 ];
+
+let centerBtn;
 
 export class Plane {
   constructor(map, location, heading) {
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
+    this.autopilot = new Autopilot();
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
@@ -63,6 +69,7 @@ export class Plane {
     this.running = 0;
     this.lastUpdate = 0;
     this.waitForInGame();
+    centerBtn = document.getElementById(`center-map`);
   }
 
   init(map, location, heading) {
@@ -74,8 +81,6 @@ export class Plane {
   async addPlaneIconToMap(map, location = Duncan, heading = 0) {
     L = await waitFor(async () => window.L);
     const props = {
-      autoPan: false,
-      autoPanOnFocus: false,
       icon: L.divIcon({
         iconSize: [73 / 2, 50 / 2],
         iconAnchor: [73 / 4, 50 / 4],
@@ -214,13 +219,43 @@ export class Plane {
   async startPolling() {
     if (!graph) {
       graph = setupGraph(document.body, 600, 400);
-      graph.start();
-      graph.setProperties(`ground`, {
-        fill: {
-          baseline: 0,
-          color: `saddlebrown`,
+      graph.setProperties(
+        {
+          label: `ground`,
+          min: 0,
+          max: 5000,
+          fill: {
+            baseline: 0,
+            color: `saddlebrown`,
+          },
         },
-      });
+        {
+          labels: `altitude, atarget`,
+          min: 0,
+          max: 5000,
+        },
+        {
+          labels: `trim, atrim`,
+          limit: 50,
+        },
+        {
+          label: `bank`,
+          limit: 40,
+        },
+        {
+          label: `turn rate`,
+          limit: 6,
+        },
+        {
+          label: `vspeed`,
+          limit: 1500,
+        },
+        {
+          labels: `heading, htarget`,
+          limit: 180,
+        },
+      );
+      graph.start();
     }
     this.monitor.registerAll(FLIGHT_PROPS, 1000);
   }
@@ -246,8 +281,11 @@ export class Plane {
       airBorn:
         data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
       heading: deg(data.PLANE_HEADING_DEGREES_MAGNETIC),
+      trueHeading: deg(data.PLANE_HEADING_DEGREES_TRUE),
+      turnRate: deg(data.TURN_INDICATOR_RATE),
       pitch: deg(data.PLANE_PITCH_DEGREES),
       trim: data.ELEVATOR_TRIM_POSITION,
+      aTrim: data.AILERON_TRIM_PCT,
       bank: deg(data.PLANE_BANK_DEGREES),
       yaw: deg(
         data.PLANE_HEADING_DEGREES_MAGNETIC - data.GPS_GROUND_TRUE_TRACK
@@ -276,7 +314,7 @@ export class Plane {
     }
 
     const pair = [lat, long];
-    this.map.setView(pair);
+    if (centerBtn.checked) this.map.setView(pair);
     this.marker.setLatLng(pair);
 
     try {
@@ -289,12 +327,22 @@ export class Plane {
     this.lat = lat;
     this.long = long;
 
-    const { airBorn, bank, pitch, trim, heading } = this.orientation;
+    const {
+      airBorn,
+      bank,
+      pitch,
+      trim,
+      aTrim,
+      heading,
+      trueHeading,
+      turnRate,
+    } = this.orientation;
     const { planeIcon } = this;
     const st = planeIcon.style;
     st.setProperty(`--altitude`, `${sqrt(max(palt, 0)) / 20}`); // 40000 -> 10em, 10000 -> 5em, 1600 -> 2em, 400 -> 1em, 100 -> 1em, 4 -> 0.1em
-    st.setProperty(`--deg`, heading | 0);
+    st.setProperty(`--deg`, trueHeading | 0);
     st.setProperty(`--speed`, speed | 0);
+    st.setProperty(`--true-diff`, (trueHeading - heading) | 0);
 
     let altitude =
       (galt | 0) === 0 ? `${alt | 0}'` : `${palt | 0}' (${alt | 0}')`;
@@ -304,12 +352,24 @@ export class Plane {
     Gyro.setPitchBank(pitch, bank);
 
     graph.addValue(`altitude`, alt);
-    graph.addValue(`pitch`, pitch);
-    graph.addValue(`trim`, trim);
+    // graph.addValue(`pitch`, pitch);
+    const trimToDegree = (v) => (v / (Math.PI / 10)) * 90;
+    graph.addValue(`trim`, trimToDegree(trim));
+    graph.addValue(`atrim`, aTrim * 100);
     graph.addValue(`bank`, bank);
+    graph.addValue(`turn rate`, turnRate);
     graph.addValue(`vspeed`, vspeed);
     graph.addValue(`ground`, galt);
+    graph.addValue(`heading`, heading - 180);
 
+    if (this.autopilot.heading.value) {
+      let target = parseInt(this.autopilot.heading.value);
+      graph.addValue(`htarget`, target - 180);
+      target = parseInt(this.autopilot.altitude.value);
+      graph.addValue(`atarget`, target);
+    }
+
+    this.autopilot.followTerrain(lat, long, trueHeading);
     this.lastUpdate = now;
   }
 }

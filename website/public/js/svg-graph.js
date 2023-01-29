@@ -31,8 +31,8 @@ class Series {
     this.max = 0;
   }
 
-  setProperties({ fill }) {
-    if (fill) {
+  setProperties({ fill = false, limit = false, min = false, max = false }) {
+    if (fill !== false) {
       const { baseline, color } = fill;
       this.baseline = baseline;
       this.filled = color === `none` || color === `transparent` ? false : true;
@@ -40,6 +40,12 @@ class Series {
       if (this.filled) set(this.path, `stroke`, color);
       this.color = color;
     }
+    if (limit !== false) {
+      min = -limit;
+      max = limit;
+    }
+    this.min = min ?? this.min;
+    this.max = max ?? this.max;
   }
 
   addValue(x, y) {
@@ -62,9 +68,13 @@ class Series {
   updateMinMax(value) {
     if (value < this.min) this.min = value;
     if (value > this.max) this.max = value;
-
-    // TODO: now we need to fit our own min/max into the SVG's min/max
-    this.g.setAttribute(`transform`, `scale(1,1)`);
+    const { min, max, height } = this;
+    const h2 = height / 2;
+    const span = Math.max(abs(max), abs(min)) / h2;
+    const scale = 1 / span;
+    this.path.setAttribute(`stroke-width`, Math.min(1, 2 * span));
+    this.g.setAttribute(`transform`, `scale(1, ${scale})`);
+    this.g.setAttribute(`data-minmax`, `${min},${max}`);
   }
 }
 
@@ -83,6 +93,9 @@ class SVGChart {
       viewBox: `0 ${this.min} ${width} ${height}`,
     }));
     parentElement.appendChild(SVGChart);
+    const style = element(`style`);
+    style.textContent = `text { font: 16px Arial; }`;
+    SVGChart.appendChild(style);
 
     // time series
     let g = (this.g = element(`g`, {
@@ -97,12 +110,47 @@ class SVGChart {
     g.appendChild(p);
 
     // legend
-    let legend = (this.legend = element(`g`, { opacity: 0.3 }));
+    let legend = (this.legend = element(`g`, { style: `opacity: 0.3` }));
     SVGChart.appendChild(legend);
 
     this.labels = {};
     this.started = false;
     this.startTime = 0;
+
+    this.addEventHandling(SVGChart);
+  }
+
+  addEventHandling(svg) {
+    const { top, left, width, height } = svg.getBoundingClientRect();
+    const cvs = document.createElement(`canvas`);
+    cvs.id = `svg-canvas`;
+    cvs.width = width - 2;
+    cvs.height = height - 2;
+    cvs.style.position = `absolute`;
+    cvs.style.top = `${top}px`;
+    cvs.style.left = `${left}px`;
+    const ctx = cvs.getContext(`2d`);
+    ctx.fillStyle = `white`;
+    svg.addEventListener(`mouseenter`, () => {
+      document.body.appendChild(cvs);
+      const img = new Image();
+      img.width = width - 2;
+      img.height = height - 2;
+      img.onload = () => {
+        ctx.fillRect(-1, -1, width, height);
+        ctx.drawImage(img, 0, 0);
+      };
+      img.onerror = (e) => console.error(e);
+      const code = svg.outerHTML.replace(
+        `<svg `,
+        `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" `
+      );
+      img.src = `data:image/svg+xml,${encodeURIComponent(code)}`;
+    });
+    cvs.addEventListener(`mouseleave`, () => {
+      const cvs = document.getElementById(`svg-canvas`);
+      if (cvs) cvs.parentNode.removeChild(cvs);
+    });
   }
 
   start() {
@@ -114,27 +162,21 @@ class SVGChart {
     this.started = false;
   }
 
-  updateViewBox(x) {
-    if (x > this.width) {
-      this.svg.setAttribute(
-        `viewBox`,
-        `${x - this.width} ${this.min} ${this.width} ${this.height}`
-      );
-      const rows = this.legend.children.length;
-      this.legend.setAttribute(
-        `transform`,
-        `translate(${x - this.width}, 0)`
-      );
-    }
-  }
-
-  setProperties(label, props) {
-    this.getSeries(label).setProperties(props);
-    const { fill } = props;
-    if (fill) {
-      const patch = document.querySelector(`g.${label} rect`);
-      patch.setAttribute(`fill`, fill.color);
-    }
+  setProperties(...entries) {
+    entries.forEach(({ label, labels, ...props }) => {
+      if (!labels) {
+        labels = label;
+      }
+      labels.split(`,`).forEach((l) => {
+        label = l.trim();
+        this.getSeries(label).setProperties(props);
+      });
+      const { fill } = props;
+      if (fill) {
+        const patch = document.querySelector(`g.${label} rect`);
+        patch.setAttribute(`fill`, fill.color);
+      }
+    });
   }
 
   getSeries(label) {
@@ -181,13 +223,24 @@ class SVGChart {
     const series = this.getSeries(label);
     const x = (Date.now() - this.startTime) / 1000;
     let y = value;
-    if (abs(value) > 1) {
-      let s = value < 0 ? -1 : 1;
-      // fit 0 to 100,000 feet in the same graph
-      y = (s * ((log10(abs(value)) / 5) * this.height)) / 2;
-    }
-    series.addValue(x, y.toFixed(2));
+    // if (abs(value) > 1) {
+    //   let s = value < 0 ? -1 : 1;
+    //   // fit 0 to 100,000 feet in the same graph
+    //   y = (s * ((log10(abs(value)) / 5) * this.height)) / 2;
+    // }
+    series.addValue(x, y.toFixed(5));
     this.updateViewBox(x);
+  }
+
+  updateViewBox(x) {
+    if (x > this.width) {
+      this.svg.setAttribute(
+        `viewBox`,
+        `${x - this.width} ${this.min} ${this.width} ${this.height}`
+      );
+      const rows = this.legend.children.length;
+      this.legend.setAttribute(`transform`, `translate(${x - this.width}, 0)`);
+    }
   }
 }
 

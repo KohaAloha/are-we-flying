@@ -17,21 +17,29 @@
       Simulator 2020...
     </p>
 
-    <ul id="questions" data-description="Templated from questions.html"></ul>
+    <ul id="questions" data-description="Templated from questions.html" style="display: none"></ul>
+
 
     <div id="maps-selectors">
       Map underlay:
       <select class="map-layer-1"></select>
       Map overlay:
       <select class="map-layer-2"></select>
+      Center:
+      <input id="center-map" type="checkbox" checked="checked">
     </div>
+
 
     <div id="viz">
       <div id="map" style="width: 600px; height: 400px"></div>
+
       <div
         id="gyroscope"
         data-description="Templated from gyroscope.html"
       ></div>
     </div>
+
+    <div id="autopilot" data-description="Templated from autopilot.html"></div>
+
   </body>
 </html>

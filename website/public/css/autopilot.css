@@ -1,0 +1,13 @@
+#autopilot {
+  margin: 0.5em 0;
+}
+
+#autopilot input[type="number"] {
+  width: 5em;
+}
+
+#autopilot button.active {
+  background: red;
+  color: white;
+  font-weight: bold;
+}

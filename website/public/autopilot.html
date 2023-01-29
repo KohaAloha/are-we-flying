@@ -1,38 +1,25 @@
 <div class="controls">
-  <!--
-  <label>Stall speed: </label>
-  <input class="stall" type="number" min="0" max="600" value="55" step="1" />
+  <link rel="stylesheet" href="/css/autopilot.css" />
 
-  <label>Cruise speed: </label>
-  <input class="cruise" type="number" min="0" max="600" value="135" step="1" />
+  <button class="reload">Reload</button>
+  <button class="ap">AP</button>
 
-  <label>Critical speed: </label>
-  <input class="crit" type="number" min="0" max="600" value="150" step="1" />
-  -->
-
+  <button class="vsh">VSH</button>
   <label>Target altitude: </label>
   <input
-    class="alt"
+    class="altitude"
     type="number"
     min="0"
     max="40000"
     value="4500"
     step="100"
   />
-
   <button class="alt">ALT</button>
-
-  <label>heading: </label>
-  <input class="heading" type="number" min="1" max="360" value="360" step="1" />
-
-  <button class="hdg">HDG</button>
+  <button class="terrain">TER</button>
   <button class="level">LVL</button>
-</div>
+  <button class="inverted">INV</button>
 
-<!--
-<canvas>
--->
-<!-- used to plot the autopilot input, same width/height as map -->
-<!--
-  </canvas>
--->
+  <label>Target heading: </label>
+  <input class="heading" type="number" min="1" max="360" value="360" step="1" />
+  <button class="hdg">HDG</button>
+</div>
