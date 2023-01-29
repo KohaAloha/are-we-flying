@@ -167,21 +167,19 @@ And a trivial `website\public\index.js` file:
 
 We'll fill in the rest as we go along. But we do need a server to use this web page, because while you _can_ just load an .html file directly in the browser, anything network related (including certain relative file loads) just flat out won't work properly. So: **never use `file:///`, always load web pages from a url**.
 
-A simple rule to follow, especially with Python installed. `python -m http.server` and boom! we have a web server running.
+A simple rule to follow, especially with Python installed. `python -m http.server` and presto: we have a web server running on http://localhost:8080
 
 ## Setting up a simple web server
 
-There's a ton of choices here, because every programming language under the sun has a way to set up a web server. The absolute simplest is to run `python -m http.server` in the same directory as your webpage, and presto, you have a web server running on http://localhost:8080! 
+Having said that, `python -m http.server` won't cut it in this case, because we want to serve up content _and_ proxy any API calls to our python server in a way that won't let folks just snoop on our IP... We don't want our webpage to actually know where the python server lives, instead we want it to be able to just call `/api/....` on itself and magically have that work.
 
-However, we're not doing that, because we want to serve up content _and_ proxy any API calls to our python server, so we don't want our webpage to actually know where the python server lives, instead being able to just call `/api/....` as if those are the api server's routes
-
-***"Why would we do this?"***
+>  ***"Hold up, why would we do this?"*** *- you, hopefully*
 
 That's a good question: web pages can run just about anywhere, but in order for our python server to work with MSFS, we need to have it run on our own computer. That comes with risks: we don't want other people to be able to just look at their browser's network tab and copy our IP address to then do all kinds of fun things with. Perhaps I should put fun in quotes. Those things tend to not be fun at all.
 
 Instead, we only want people to be able to see the IP address of the web server that's serving up our web page, and have the web page communicate only with that server. We can then make the web server talk to _our_ computer on the "server side". That's one extra step, but now people can't just trivially find our IP and do questionable things.
 
-To that effect, we're going to set up a simple Node.js [express server](https://expressjs.com/), mostly because it has an almost trivial way to set up a proxy to another server for a specific route, using `express-http-proxy`. First up, let's make a `website` dir, and install the necessary dependencies in there:
+To that effect, we're going to set up a simple Node.js [express server](https://expressjs.com/), mostly because it has an almost trivial way to set up a proxy to another server for a specific route, using `express-http-proxy`. So first up, let's make a `website` dir, and install the necessary dependencies in there:
 
 ```
 C:\Users\You\Documents\are-we-flying\website\> npm install express express-http-proxy open
@@ -323,9 +321,9 @@ If we have MSFS running we can now run `C:\Users\You\Documents\are-we-flying\run
 
 So: so far, so good. We can check for the server, because the network request fails if it's not up, and we can check for whether it's connected to MSFS once the server is up, but then we hit a snag.
 
-It turns out MSFS has no good way to tell you whether someone's actually in game or not. That is to say, rather than offering an easy to query variable, Microsoft designed the SimConnect SDK with in-game addons in mind, so it expects your code to start up _with_ MSFS, registering an event listener, and then when the game starts your can gets notified about state transition events.
+It turns out MSFS has no good way to tell you whether someone's actually in game or not. That is to say, rather than offering an easy to query variable, Microsoft designed the SimConnect SDK with in-game addons in mind, so it expects your code to start up _with_ MSFS, registering an event listener on startup, so that your code can get notified about state transition events.
 
-This is not super useful if we start up our API server late, or even only after we already started flying, so we're obviously not going to be able to use that part of the SimConnect SDK: we have to come up with something different. So, to make things a little easier, I updated my fork of `python-simconnect` to have a special variable that's not part of the official SimConnect SDK itself: `SIM_RUNNING`, which is an `int.int` formatted value. The integer part of the number is one of 0, 1, 2, or 3, where the value 3 means we're playing the game, 2 means we're in game but we paused the game, and 1 or 0 tells us we're navigating the menu system out-of-game or are in game state transition screens (like the loading screen after picking a plane and departure point on the world map). The decimal fraction part of the number represents the current game camera angle (a number between 2 and 25) which we can use to determine whether we're legitimately flying the plane, or whether we're in [slew mode](https://www.flightsim.com/vbfs/showthread.php?286073-What-the-heck-is-quot-slew-quot-mode) or checking out our plane using the special [drone camera](https://forums.flightsimulator.com/t/how-to-using-the-drone-cam-tips-tricks/128165), etc.
+This is not super useful if we start up our API server late, or after we already started flying. We're obviously not going to be able to use that part of the SimConnect SDK: we have to come up with something different. So, to make things a little easier, I updated my fork of `python-simconnect` to have a special variable that's not part of the official SimConnect SDK itself: `SIM_RUNNING`, which is an `int.int` formatted value. The integer part of the number is one of 0, 1, 2, or 3, where the value 3 means we're playing the game, 2 means we're in game but we paused the game, and 1 or 0 tells us we're navigating the menu system out-of-game or are in game state transition screens (like the loading screen after picking a plane and departure point on the world map). The decimal fraction part of the number represents the current game camera angle (a number between 2 and 25) which we can use to determine whether we're legitimately flying the plane, or whether we're in [slew mode](https://www.flightsim.com/vbfs/showthread.php?286073-What-the-heck-is-quot-slew-quot-mode) or checking out our plane using the special [drone camera](https://forums.flightsimulator.com/t/how-to-using-the-drone-cam-tips-tricks/128165), etc.
 
 So let's query the python server for that variable!
 
@@ -398,15 +396,15 @@ There's a whole bunch of parameters we can query MSFS for, so here are the ones 
 | AUTOPILOT_MASTER | Is the built-in autopilot on? (if there is one!) |
 | ELEVATOR_TRIM_POSITION | How much the plane's been set to pitch, in order to counteract things like weight distribution and airspeed making the plane tilt up or down. |
 | GPS_GROUND_TRUE_TRACK | The heading our plane is flying in, which is _not_ always the heading our plane is _pointing_ in (thanks, cross wind). |
-| GROUND_ALTITUDE | How high the ground underneath us is with respect to sea level, in feet |
+| GROUND_ALTITUDE | How high the ground underneath us is with respect to sea level, in feet. |
 | INDICATED_ALTITUDE | How high the plane claims it's flying, in feet (which might be wrong!) |
 | PLANE_ALT_ABOVE_GROUND | How high above the ground we are, in feet. |
 | PLANE_BANK_DEGREES | How much we're pitching left or right, in radians. |
-| PLANE_HEADING_DEGREES_MAGNETIC | The compass heading that the plane thinks it's pointing in, in radians. |
-| PLANE_HEADING_DEGREES_TRUE | The heading we're _actually_ pointing in, based on GPS information. |
+| PLANE_HEADING_DEGREES_MAGNETIC | The compass heading that the plane thinks it's pointing at, in radians. |
+| PLANE_HEADING_DEGREES_TRUE | The heading we're _actually_ pointing at (magnets... how do they even work??) |
 | PLANE_LATITUDE | Our north/south GPS coordinate. |
 | PLANE_LONGITUDE | Our east/west GPS coordinate. |
-| PLANE_PITCH_DEGREES | How much the plane is pitching up or down, in radians. (But because of how flight works, the plane pitching up does not necessarily mean we're actually _moving up). |
+| PLANE_PITCH_DEGREES | How much the plane is pitching up or down, in radians. (But because of how flight works, the plane pitching up does not necessarily mean we're actually _moving_ up). |
 | SIM_ON_GROUND | This tells us whether the plane is on the ground or in the air. |
 | STATIC_CG_TO_GROUND | The distance from our plane's center of gravity (CG) to the actual ground. |
 | TITLE | The make and model of our plane. |
@@ -472,7 +470,7 @@ We can now start writing whatever we like in our `doCoolThingsWithOurData(vector
 
 ### What's the plane doing, where?
 
-In order to make sure we know what our autopilot will be doing (remember, that was our original intention!) let's draw our plane on a map using the [Leaflet](https://leafletjs.com/) library and plot some of the flight data in a graph, to give us some insight into what's happening:
+In order to make sure we know what our autopilot will be doing (remember, that was our original intent!) let's draw our plane on a map using the [Leaflet](https://leafletjs.com/) library and plot some of the flight data in a graph, to give us some insight into what's happening:
 
 ```javascript
 // Leaflet creates a global "L" object to work with.
@@ -505,7 +503,7 @@ async function doCoolThingsWithOurData(orientation, details) {
 }
 ```
 
-With that, we have a map that shows our plane, and when we're flying, updates our plane location and makes sure to center the map on its new location.
+With this code we have a map that shows our plane and updates our plane location as we're flying, making sure to center the map on its new location.
 
 <figure style="width: 60%; margin: auto; margin-bottom: 1em;" >
   <a href="duncan-bad.png" target="_blank">
@@ -515,7 +513,7 @@ With that, we have a map that shows our plane, and when we're flying, updates ou
 </figure>
 
 
-But it will look wrong pretty much all the time because the plane isn't facing the right direction, so let's fix that with some CSS:
+But, uh, it will look wrong pretty much all the time because the plane isn't facing the right direction... So let's fix that with some CSS:
 
 ```css
 #plane-icon {
