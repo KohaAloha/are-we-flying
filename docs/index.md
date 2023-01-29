@@ -22,7 +22,7 @@ But back to Python and JavaScript: MSFS comes with an SDK called the [SimConnect
 
 Since the idea is to interface with MSFS from a webpage, and webpages use JS, my first thought was "cool, I can write an express server that connects to MSFS?" to which the answer unfortunately is no. At least not directly. The `node-simconnect` package is rather incomplete, and so rather than using Node to interface with MSFS, we reach for the next best thing: [python-simconnect](https://pypi.org/project/SimConnect/). Sure, we now need two languages, but they're both fairly easy to work with so why not.
 
-Using `python-simconnect`, we can write a tiny Python webserver with `GET` calls for querying MSFS, and `POST` calls for setting values in-sim, and then our webpage can just use [the Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) to talk to our Python server for all its needs. Although it turns out that even `python-simconnect` is incomplete (although far less so than `node-simconnect`), so we're actually using [a fork I made](https://github.com/Pomax/Python-SimConnect/tree/edits) that makes some improvements we need to in order to tell all the different states that MSFS can be in apart, as well as adding a few missing sim variables, renaming some that had the wrong name, and fixing some that had the wrong editable flag set.
+Using `python-simconnect`, we can write a tiny Python webserver with `GET` calls for querying MSFS, and `POST` calls for setting values in-sim, and then our webpage can just use [the Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) to talk to our Python server for all its needs. Although it turns out that even `python-simconnect` is incomplete (although far less so than `node-simconnect`), so we're actually using [a fork I made](https://github.com/Pomax/Python-SimConnect/tree/edits) that makes some improvements we need to in order to tell apart all the different states that MSFS can be in, as well as adding a few missing sim variables, renaming some that had the wrong name, and fixing some that had the wrong editable flag set.
 
 So let's get coding!
 
@@ -30,7 +30,7 @@ So let's get coding!
 
 Let's write a simple Python script that sets up a "SimConnection" object (which will handle all the MSFS connector logic), a `GET` route for getting values out of MSFS, and a `POST` route for setting values in MSFS. First, we'll create a virtual environment to work with, and install the SimConnect fork:
 
-```powershell
+```bash
 C:\Users\You\Documents\are-we-flying\> python -m venv venv
 C:\Users\You\Documents\are-we-flying\> venv\Scripts\activate
 (venv) C:\Users\You\Documents\are-we-flying\> python -m pip install git+https://github.com/pomax/python-simconnect@master#egg=simconnect
@@ -165,7 +165,9 @@ And a trivial `website\public\index.js` file:
 // look at all this empty space! O_O
 ```
 
-We'll fill in the rest as we go along. But we do need a server to use this web page, because while you _can_ just load an .html file directly in the browser, anything network related (including certain relative file loads) just flat out won't work properly so never use `file:///`, always load web pages from a url.
+We'll fill in the rest as we go along. But we do need a server to use this web page, because while you _can_ just load an .html file directly in the browser, anything network related (including certain relative file loads) just flat out won't work properly. So: **never use `file:///`, always load web pages from a url**.
+
+A simple rule to follow, especially with Python installed. `python -m http.server` and boom! we have a web server running.
 
 ## Setting up a simple web server
 
