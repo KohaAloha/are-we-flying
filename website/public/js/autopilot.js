@@ -10,7 +10,7 @@ const autopilotURL = `http://localhost:8080/autopilot`;
 export class Autopilot {
   constructor() {
     const ap = document.querySelector(`#autopilot`);
-    this.reload = ap.querySelector(`button.reload`);
+    this.acrobatic = ap.querySelector(`button.acrobatic`);
     this.master = ap.querySelector(`button.ap`);
     this.altitude = ap.querySelector(`input.altitude`);
     this.heading = ap.querySelector(`input.heading`);
@@ -28,6 +28,7 @@ export class Autopilot {
     this.master.classList[state.AP_STATE ? `add` : `remove`](`active`);
     this.altitude.value = state.ALT ?? this.alt.value;
     this.heading.value = state.HDG ?? this.heading.value;
+    this.acrobatic.classList[state.ACR ? `add` : `remove`](`active`);
     this.alt.classList[state.VSH ? `add` : `remove`](`active`);
     this.alt.classList[state.ALT ? `add` : `remove`](`active`);
     this.lvl.classList[state.LVL ? `add` : `remove`](`active`);
@@ -48,10 +49,7 @@ export class Autopilot {
     this.lvl.addEventListener(`click`, () => this.toggleLVL());
     this.inv.addEventListener(`click`, () => this.toggleINV());
     this.hdg.addEventListener(`click`, () => this.toggleHDG());
-
-    this.reload.addEventListener(`click`, () => {
-      fetch(`${autopilotURL}/reload`, { method: `POST` });
-    });
+    this.acrobatic.addEventListener(`click`, () => this.toggleACR());
 
     // check if we need to override the autopilot from URL
     setTimeout(() => this.toggleFromURL(), 2000);
@@ -65,6 +63,11 @@ export class Autopilot {
 
     const { search } = window.location;
     const params = new URLSearchParams(search);
+
+    const acr = params.get(`acr`);
+    if (acr && !state.ACR) {
+      this.toggleACR();
+    }
 
     const ap = params.get(`ap`);
     if (ap && !state.AP_STATE) {
@@ -144,6 +147,11 @@ export class Autopilot {
   async toggleLVL() {
     await fetch(`${autopilotURL}?type=LVL`, { method: `POST` });
     this.lvl.classList.toggle(`active`);
+  }
+
+  async toggleACR() {
+    await fetch(`${autopilotURL}?type=ACR`, { method: `POST` });
+    this.acrobatic.classList.toggle(`active`);
   }
 
   async toggleINV() {

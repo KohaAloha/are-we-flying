@@ -3,13 +3,13 @@
 <figure style="width: 40%; margin: auto; margin-bottom: 1em;">
   <a href="python-flying-airplane.png" target="_blank">
     <img src="python-flying-airplane.png" alt="A python trying to fly an airplane"/>
-  </a>      
+  </a>
   <figcaption style="font-style: italic; text-align: center;">Flying planes with Python, you say?<br><sub>(image created by Dall-E)</sub></figcaption>
 </figure>
 
 To allay any concerns: this will not be actually running Python or JavaScript software in the cockpit of a real aircraft in order to effect automated flight: that would kill people. Instead, we're writing a web page that can control an autopilot running in Python that in turn controls a little virtual aeroplane. And by "little" I actually mean "any aeroplane in [Microsoft Flight Simulator](https://www.flightsimulator.com/)" because as it turns out, MSFS comes with an API that can be used to both query _and set_ values ranging from anything as simple as cockpit lights to something as complex as spawning a fleet of aircraft and making them perform formation flights while making their smoke pattern spell out the works of Chaucer in its original middle English.
 
-While we're not doing that (...today?), we _are_ going to write an autopilot for planes that don't have one, as well as planes that do have one but that are just a 1950's chore to work with, like the one in my favourite real-life plane, the [DeHavilland DHC-2 "Beaver"](https://en.wikipedia.org/wiki/De_Havilland_Canada_DHC-2_Beaver), originally made by the [de Havilland Aircraft Company](https://en.wikipedia.org/wiki/De_Havilland) , but these days made by [Viking Air](https://www.vikingair.com/viking-aircraft/dhc-2-beaver) (which is amazing and fantastic and they are true aviation heroes). Specifically, the float plane version, which flies between [Vancouver](https://www.openstreetmap.org/relation/2218280) and [Vancouver Island](https://www.openstreetmap.org/relation/2249770), as well as locations dotted around the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885). I don't have a pilot's license, but the nice thing about tiny flights is that you regularly get to sit in the copilot seat, and enjoy beautiful British Columbia from only 300 meters up in the air. 
+While we're not doing that (...today?), we _are_ going to write an autopilot for planes that don't have one, as well as planes that do have one but that are just a 1950's chore to work with, like the one in my favourite real-life plane, the [DeHavilland DHC-2 "Beaver"](https://en.wikipedia.org/wiki/De_Havilland_Canada_DHC-2_Beaver), originally made by the [de Havilland Aircraft Company](https://en.wikipedia.org/wiki/De_Havilland) , but these days made by [Viking Air](https://www.vikingair.com/viking-aircraft/dhc-2-beaver) (which is amazing and fantastic and they are true aviation heroes). Specifically, the float plane version, which flies between [Vancouver](https://www.openstreetmap.org/relation/2218280) and [Vancouver Island](https://www.openstreetmap.org/relation/2249770), as well as locations dotted around the [Strait of Georgia](https://www.openstreetmap.org/relation/13321885). I don't have a pilot's license, but the nice thing about tiny flights is that you regularly get to sit in the copilot seat, and enjoy beautiful British Columbia from only 300 meters up in the air.
 
 <figure style="width: 40%; margin: auto; margin-bottom: 1em;" >
   <a href="https://harbourair.com/flight-info/flight/locations" target="_blank">
@@ -312,7 +312,7 @@ Let's create a little `run.bat` so we can run one command to start up both the p
 ```powershell
 @echo off
 start "" cmd /k "cd venv\Scripts & activate & cd ..\..\api & title Autopilot & python server.py"
-start "" cmd /k "cd website & title Webserver & npm start"
+start "" cmd /k "cd website & title Webserver & node server.js"
 ```
 
 If we have MSFS running we can now run `C:\Users\You\Documents\are-we-flying\run` and this will start two Windows command prompts, one running our python API server in a virtual environment, and one running our Express webserver, automatically opening your browser to the webserver's local URL.
@@ -335,7 +335,7 @@ async function checkForPlaying() {
     find(`.in-game`).textContent = `yes!`;
     return waitForEngines();
   }
-  // If we're not in game, check again one second from now.    
+  // If we're not in game, check again one second from now.
   setTimeout(checkForPlaying, 1000);
 }
 
@@ -366,12 +366,12 @@ async function waitForEngines() {
   const data = await getAPI(...ENGINE_DATA);
   if (data.ENGINE_TYPE === 2) {
     // this is the "this plane has no engines" value!
-    find(`.flying`).textContent = `yes!`;      
+    find(`.flying`).textContent = `yes!`;
     return startMonitoringFlightData();
   }
   const enginesRunning = [1,2,3,4].some(id => data[`ENG_COMBUSTION:${id}`]));
   if (enginesRunning) {
-    find(`.flying`).textContent = `yes!`;      
+    find(`.flying`).textContent = `yes!`;
     return startMonitoringFlightData();
   }
   // If the plane's not running, check again one second from now.
@@ -380,7 +380,7 @@ async function waitForEngines() {
 
 // Step 4b: start monitoring flight data
 async function startMonitoringFlightData() {
-  // we'll add this code in the next section!   
+  // we'll add this code in the next section!
 }
 ```
 And with that, we can move on to our "flight analysis":
@@ -432,7 +432,7 @@ async function startMonitoringFlightData() {
 
 async function update(data) {
   cachedData = data;
-    
+
   // Get our orientation information
   const orientation = {
     airBorn: data.SIM_ON_GROUND === 0 || this.vector.alt > this.vector.galt + 30,
@@ -589,7 +589,7 @@ async function startMonitoringFlightData() {
     ...
   );
   graph.start();
-    
+
   // ...then start our "main loop" for polling and then processing flight data
   setInterval(() => {
     const flightData = await getAPI(...FLIGHT_DATA);
@@ -686,7 +686,7 @@ You can see that there's going to be three important functions:
 
 - `autopilot.get_state()` which will give us a JSON readback of the various settings in our autopilot:
 
-  - ```python 
+  - ```python
     def get_state(self):
       state = {'AP_STATE': self.auto_pilot_enabled}
       for key, value in self.modes.items():
@@ -706,7 +706,7 @@ You can see that there's going to be three important functions:
 
 - and `autopilot.toggle()` which lets us toggle an autopilot feature from on to off, or off to on:
 
-  - ```python 
+  - ```python
     def toggle(self, ap_type):
       if ap_type not in self.modes:
         return None
@@ -732,7 +732,7 @@ We start by observing that we _could_ try to take all our aeroplane's flight dat
 
 Instead, we're going to implement our autopilot as a _reactionary_ system: it looks at what the current flight data is, and then puts in small corrections that'll push us away from the wrong direction, and we repeat that process over and over and over, every time looking at the new flight data, and then saying which new corrections to make. The trick to getting an autopilot working based on this approach is that if we can do this in a way that makes the corrections smaller and smaller every time we run, we will converge on the desired flight path, barely having to correct anything after a while. The plane will just be flying the way we want it to.
 
-Of course, a real autopilot does this kind of monitoring and correcting on a continuous basis. Something we don't really have the luxury of doing by using Python: in order not to overload both Python and MSFS, we can really only run our code few times per second, so let's pick something that we as humans can understand: we're going to run our code twice per second. That means our autopilot's going to be pretty coarse! ...and yet, we'll be able to make it work, because 
+Of course, a real autopilot does this kind of monitoring and correcting on a continuous basis. Something we don't really have the luxury of doing by using Python: in order not to overload both Python and MSFS, we can really only run our code few times per second, so let's pick something that we as humans can understand: we're going to run our code twice per second. That means our autopilot's going to be pretty coarse! ...and yet, we'll be able to make it work, because
 
 ### The backbone of our Autopilot code: constrain-mapping
 
@@ -741,7 +741,7 @@ Before we do anything else, let's first look at what is probably _the_ single mo
 <figure style="width: 80%; margin: auto; margin-bottom: 1em;">
   <a href="constraint_map.png" target="_blank">
     <img src="constraint_map.png" alt="Constrained mapping"/>
-  </a>      
+  </a>
   <figcaption style="font-style: italic; text-align: center;">Mapping interval [a,b] to [c,d]<br></figcaption>
 </figure>
 And that last part is critically important: if we're going to write an autopilot, we want to be able to effect proportional changes, but we want to "cap" those changes to some minimum and maximum value because just yanking the plane in some direction so hard that it stalls is the opposite of useful.
@@ -770,7 +770,7 @@ And then just because this is also going to be important: when we're mapping fro
 <figure style="width: 80%; margin: auto; margin-bottom: 1em;">
   <a href="constraint_map_limited.png" target="_blank">
     <img src="constraint_map_limited.png" alt="Constrained mapping with a dead zone"/>
-  </a>      
+  </a>
   <figcaption style="font-style: italic; text-align: center;">Mapping interval [a,b] to [c,d] with a dead zone<br></figcaption>
 </figure>
 
@@ -801,7 +801,7 @@ We're going to rely on this function _a lot_, so now that we know what it does, 
 
 ### Implementing Level Mode
 
-For level mode, this means we're going to simply check "is the plane tilting left or right?" and if so, we move the **aileron trim**—a value that "biases" the plane to tilt left or right—in the opposite direction. As long we do that for long enough, we'll eventually have the plane flying nice and steady. You can think of this as "moving the center of gravity" of the plane (even though of course that's not what's really happening), so let's write some code. 
+For level mode, this means we're going to simply check "is the plane tilting left or right?" and if so, we move the **aileron trim**—a value that "biases" the plane to tilt left or right—in the opposite direction. As long we do that for long enough, we'll eventually have the plane flying nice and steady. You can think of this as "moving the center of gravity" of the plane (even though of course that's not what's really happening), so let's write some code.
 
 ```python
 class Autopilot:
@@ -812,24 +812,24 @@ class Autopilot:
     if self.modes[ap_type]:
       if ap_type == LEVEL_MODE:
         self.anchor.y = self.get('ELEVATOR_TRIM_POSITION')
-    
+
   def fly_level(self, state):
     anchor = self.anchor
-    
+
     # how much are we banking, and what's our maximum permissible bank?
     bank = degrees(state.bank_angle)
     max_bank = 15
-    
+
     # how much is our bank accelerating, and what's that max permissible value?
     dBank = state.dBank
     max_dBank = radians(1)
-    
+
     # A reasonably "safe" step size for updating our aileron trim
     step = radians(1)
-    
+
     # For level flight, our target bank is zero degrees:
     target_bank = 0
-    diff = target_bank - bank 
+    diff = target_bank - bank
 
     # Push us closer towards our target bank:
     anchor.x += constrain_map(diff,
@@ -895,12 +895,12 @@ def hold_vertical_speed(self, state):
 
   # For stable flight, our target VS is zero:
   target_VS = 0
-    
+
   # Determine the difference in vertical speed we need to overcome,
   # and use that to constrain our maximum allowed vertical acceleration.
   diff = target_VS - VS
   max_dVS = 1 + constrain_map(abs(diff), 0, 100, 0, max_dVS - 1)
-    
+
   # Are we accelerating too much? Then we need to pitch in the opposite direction:
   if dVS < -max_dVS or dVS > max_dVS:
     anchor.y -= constrain_map(dVS, -10 * max_dVS, 10 * max_dVS, -kick, kick)
@@ -1002,7 +1002,7 @@ def fly_level(auto_pilot, state):
   anchor = auto_pilot.anchor
 
   # Since we're now turning the plane for long periods, we want to make
-  # sure that we're using safe(ish) maximum bank values. The faster a 
+  # sure that we're using safe(ish) maximum bank values. The faster a
   # plane flies, the more it can bank without "falling out of the sky":
   bank = degrees(state.bank_angle)
   max_bank = constrain_map(state.speed, 50, 200, 10, 30)
@@ -1097,7 +1097,7 @@ First up, the Top Rudder 103 Solo:
   </a>
 </figure>
 
-We see that it's actually doing pretty well! Jumping 10, 30, 100, and 140 degrees all seem to get to their target fast enough, there's a bit of overshoot, and a bit of an oscillating convergence, but for the most part it's doing what it needs to do (especially for a plane that technically has no trim controls). We do see a rather prolonged oscillation at the end, but that's mostly because that was right when the plane was flying over a river delta and the wind decided to have some fun. 
+We see that it's actually doing pretty well! Jumping 10, 30, 100, and 140 degrees all seem to get to their target fast enough, there's a bit of overshoot, and a bit of an oscillating convergence, but for the most part it's doing what it needs to do (especially for a plane that technically has no trim controls). We do see a rather prolonged oscillation at the end, but that's mostly because that was right when the plane was flying over a river delta and the wind decided to have some fun.
 
 What about the Beaver?
 
@@ -1142,7 +1142,7 @@ def hold_altitude(auto_pilot, state):
   # ...
 
   auto_pilot.api.set_property_value('ELEVATOR_TRIM_POSITION', anchor.y)
-  
+
 ```
 
 And that's it, even less code than heading mode! We have everything else already in place, including making sure of safe vertical speeds, so all we need to do is make sure that we set a non-zero vertical speed as target speed while we're not near our target altitude (capped once we reach an altitude difference of 200 feet)  and then slowly decrease that to (near) zero as we reach the desired altitude.

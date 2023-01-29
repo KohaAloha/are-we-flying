@@ -116,9 +116,6 @@ def run():
         webServer.server_close()
         print('Server stopped')
         os._exit(1)
-    except WindowsError as error:
-        print("k well this better be good", error)
-        os._exit(2)
     except OSError as error:
         print(error)
         print("I'm going to exit now, but at least hopefully we can debug?")

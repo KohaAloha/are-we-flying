@@ -14,13 +14,15 @@ from constants import (
     HEADING_MODE,
     VERTICAL_SPEED_HOLD,
     ALTITUDE_HOLD,
+    ACROBATIC,
     INVERTED_FLIGHT
 )
+
+crashed = False
 
 
 class AutoPilot():
     def __init__(self, api: SimConnection, old_instance=None):
-        print("RELOADING")
         self.api: SimConnection = api
         api.set_auto_pilot(self)
         self.auto_pilot_enabled: bool = False
@@ -32,6 +34,7 @@ class AutoPilot():
                 HEADING_MODE: False,  # heading mode
                 VERTICAL_SPEED_HOLD: False,  # vertical speed hold
                 ALTITUDE_HOLD: False,  # altitude hold
+                ACROBATIC: False, # use the special acrobatic code instead?
                 INVERTED_FLIGHT: False,  # fly upside down?
             }
         self.bootstrap()
@@ -42,10 +45,11 @@ class AutoPilot():
         """
         self.prev_state = State()
         self.anchor = Vector()
-        self.inverted = 1
+        self.acrobatic = True
+        self.inverted = False
 
     def schedule_ap_call(self):
-        Timer(0.5, self.run_auto_pilot, [], {}).start()
+        Timer(0.5, self.try_run_auto_pilot, [], {}).start()
 
     def get(self, name):
         return self.api.get_standard_property_value(name)
@@ -57,7 +61,7 @@ class AutoPilot():
         self.api.set(name, value)
 
     def get_auto_pilot_parameters(self):
-        state = {'AP_STATE': self.auto_pilot_enabled}
+        state = { 'AP_STATE': self.auto_pilot_enabled }
         for key, value in self.modes.items():
             state[key] = value
         return state
@@ -74,7 +78,12 @@ class AutoPilot():
             print(f'Engaging level mode')
             self.anchor.x = self.get('AILERON_TRIM_PCT')
         if ap_type == INVERTED_FLIGHT:
-            self.inverted = -1 if self.modes[ap_type] else 1
+            self.inverted = not self.inverted
+            # reset our anchor and trim: things are about to get spicy
+            self.anchor.x = 0
+            self.api.set('AILERON_TRIM_PCT', 0)
+            self.anchor.y = 0
+            self.api.set('ELEVATOR_TRIM_POSITION', -0.07 if self.inverted else 0)
         return self.modes[ap_type]
 
     def set_target(self, ap_type, value):
@@ -96,12 +105,25 @@ class AutoPilot():
             self.schedule_ap_call()
         return self.auto_pilot_enabled
 
+    def try_run_auto_pilot(self):
+        try:
+            self.run_auto_pilot()
+        except OSError:
+            global crashed
+            crashed = True
+            print("OSError encountered, halting autopilot.")
+            import traceback
+            traceback.print_exc()
+
     def run_auto_pilot(self):
         """
         This is our master autopilot entry point,
         grabbing the current state from MSFS, and
         forwarding it to the relevant AP handlers.
         """
+        if crashed:
+            return
+
         if not self.auto_pilot_enabled:
             return
 

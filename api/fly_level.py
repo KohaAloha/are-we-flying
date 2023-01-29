@@ -1,11 +1,14 @@
 from math import degrees, radians, copysign, pi, sqrt
 from utils import constrain, constrain_map, get_compass_diff
-from constants import HEADING_MODE
+from constants import HEADING_MODE, ACROBATIC
 
 # TODO: we need to speed up more, and slow down faster for the 310R, this heading mode is pretty slow...
 
 
 def fly_level(auto_pilot, state):
+    if auto_pilot.modes[ACROBATIC]:
+        return fly_acrobatic(auto_pilot, state)
+
     anchor = auto_pilot.anchor
 
     bank = degrees(state.bank_angle)
@@ -46,5 +49,36 @@ def fly_level(auto_pilot, state):
                               max_turn_rate, -step/5, step/5)
         anchor.x -= nudge
 
-
     auto_pilot.api.set('AILERON_TRIM_PCT', anchor.x)
+
+
+def fly_acrobatic(auto_pilot, state):
+    """
+    Acrobatic flight is much snappier, but only really works if you're going fast enough.
+    """
+
+    factor = -1 if auto_pilot.inverted else 1
+    center = 0 if factor == 1 else pi
+    bank = state.bank_angle
+    bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
+
+    anchor = auto_pilot.anchor
+    anchor.x += constrain_map(bank, -5, 5, -2, 2)
+
+    if auto_pilot.modes[HEADING_MODE]:
+        heading = degrees(state.heading)
+        target = auto_pilot.modes[HEADING_MODE]
+        hdiff = get_compass_diff(heading, target)
+        turn_rate = state.turn_rate
+        turn_limit = constrain_map(abs(hdiff), 0, 10, 0.01, 0.03)
+        bump = constrain_map(hdiff, -20, 20, -5, 5)
+        bump = bump if abs(bump) > 0.25 else copysign(0.25, hdiff)
+        if (hdiff < 0 and turn_rate > -turn_limit) or (hdiff > 0 and turn_rate < turn_limit):
+            anchor.x += bump
+
+        # Do we need to prevent our upside-down plane trying to fall out of the sky?
+        if factor == -1:
+            if (hdiff < 0 and turn_rate > turn_limit) or (hdiff > 0 and turn_rate < -turn_limit):
+                anchor.x -= 1.1 * bump
+
+    auto_pilot.api.set('AILERON_TRIM_PCT', (anchor.x + bank)/180)
