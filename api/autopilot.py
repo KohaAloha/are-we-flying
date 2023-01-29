@@ -109,6 +109,7 @@ class AutoPilot():
         # are errors due to MSFS glitching, or the DLL
         # handling glitching, or values somehow having
         # gone missing etc. etc: schedule the next call
+
         self.schedule_ap_call()
 
         # Are we flying, or paused/in menu/etc?

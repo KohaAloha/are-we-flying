@@ -936,7 +936,30 @@ There are a few more "magic numbers" that we can fiddle with here, just like bef
 
 ### Analysing our code so far
 
-Writing code is well and good, but how good is it? Let's fly some planes and see what the graphs tell us. Let's start with the Top Rudder 103 Solo ultralight. This plane has a throttle, and a stick, and that's basically it, so what happens if we tell it that it actually has an autopilot and we start trimming it to fly fully level?
+Writing code is well and good, but the proof is in the pudding: we're going to have to fly some planes and see what the graphs tell us, which means making sure we can toggle the autopilot code, so let's add some code to our `index.html`:
+
+```html
+<div id="autopilot">
+  <button class="master">AP</button>
+  <button class="LVL">level mode</button>
+  <button class="VSH">vertical hold</button>
+</div>
+```
+
+With some JS to hook into that in our `index.js`:
+
+```javascript
+const AP_URL = `http://localhost:8080/autopilot/`
+const ap = document.getElementById(`autopilot`);
+const callAP = (suffix=``) => fetch(AP_URL + suffix, { method: `POST` });
+ap.querySelector(`.master`).addEventListener(`click`, () => callAP());
+ap.querySelector(`.LVL`).addEventListener(`click`, () => callAP(`?type=LVL`));
+ap.querySelector(`.VSH`).addEventListener(`click`, () => callAP(`?type=VSH`));
+```
+
+And now we can toggle our autopilot, level mode, and vertical hold mode from our web page, and then watch the graph evolve over time.
+
+Let's start with the Top Rudder 103 Solo ultralight. This plane has a throttle, and a stick, and that's basically it, so what happens if we tell it that it actually has an autopilot and we start trimming it to fly fully level?
 
 <figure style="width: 40%; margin: auto; margin-bottom: 1em;">
   <a href="top-rudder-vsh-lvl.png" target="_blank">
@@ -1037,7 +1060,34 @@ And that's it, again: not _actually_ a lot of code, but we now have a heading mo
 
 ### How well does this fly?
 
-Let's look at some graphs again to see how things behave, We'll get the planes to fly mostly level with a heading of 60 manually first, then engage the autopilot with vertical hold and heading mode engaged for 60, then adjust our heading to 70, 100, 200, and back to 60.
+Let's look at some graphs again to see how things behave, with some additions to our webpage so we can set some values. First we update our `index.html`:
+
+```html
+<div id="autopilot">
+  <button class="master">AP</button>
+  <button class="LVL">level mode</button>
+  <input class="heading" type="number" value="60">
+  <button class="HDG">fly heading</button>
+  <button class="VSH">vertical hold</button>
+</div>
+```
+
+And some more JS:
+
+```javascript
+const AP_URL = `http://localhost:8080/autopilot/`
+const ap = document.getElementById(`autopilot`);
+const callAP = (suffix=``) => fetch(AP_URL + suffix, { method: `POST` });
+ap.querySelector(`.master`).addEventListener(`click`, () => callAP());
+ap.querySelector(`.LVL`).addEventListener(`click`, () => callAP(`?type=LVL`));
+ap.querySelector(`.VSH`).addEventListener(`click`, () => callAP(`?type=VSH`));
+ap.querySelector(`.HDG`).addEventListener(`click`, () => {
+    const heading = ap.querySelector(`.heading`).value;
+    callAP(`?type=HDG&target=${heading}`);
+});
+```
+
+We'll get the planes to fly mostly level with a heading of 60 manually first, then engage the autopilot with vertical hold and heading mode engaged for 60, then adjust our heading to 70, 100, 200, and back to 60.
 
 First up, the Top Rudder 103 Solo:
 
@@ -1099,7 +1149,40 @@ And that's it, even less code than heading mode! We have everything else already
 
 ### How well does this fly?
 
-Let's find out! Again, we'll profile our three aircraft, this time setting a target heading of 60 degrees with target altitude of 1500 feet, then once we get there, we'll pop up to 2500 feet, and then once we get to that, we'll drop back to 1500 feet.
+Again, first some more HTML:
+
+```html
+<div id="autopilot">
+  <button class="master">AP</button>
+  <button class="LVL">level mode</button>
+  <input class="heading" type="number" value="60">
+  <button class="HDG">fly heading</button>
+  <button class="VSH">vertical hold</button>
+  <input class="altitude" type="number" value="1500">
+  <button class="ALT">hold altitude</button>
+</div>
+```
+
+And some more JS:
+
+```javascript
+const AP_URL = `http://localhost:8080/autopilot/`
+const ap = document.getElementById(`autopilot`);
+const callAP = (suffix=``) => fetch(AP_URL + suffix, { method: `POST` });
+ap.querySelector(`.master`).addEventListener(`click`, () => callAP());
+ap.querySelector(`.LVL`).addEventListener(`click`, () => callAP(`?type=LVL`));
+ap.querySelector(`.VSH`).addEventListener(`click`, () => callAP(`?type=VSH`));
+ap.querySelector(`.HDG`).addEventListener(`click`, () => {
+    const heading = ap.querySelector(`.heading`).value;
+    callAP(`?type=HDG&target=${heading}`);
+});
+ap.querySelector(`.ALT`).addEventListener(`click`, () => {
+    const altitude = ap.querySelector(`.altitude`).value;
+    callAP(`?type=ALT&target=${altitude}`);
+});
+```
+
+And then: let's find out! Again, we'll profile our three aircraft, this time setting a target heading of 60 degrees with target altitude of 1500 feet, then once we get there, we'll pop up to 2500 feet, and then once we get to that, we'll drop back to 1500 feet.
 
 First up again is the Top Rudder 103 Solo:
 
