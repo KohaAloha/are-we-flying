@@ -1238,6 +1238,6 @@ Say hi if you see me!
 
 (And if you have ideas on how to improve this code without substantially lengthening it, let me know! It's easy enough to write code that has a million code paths for specific combinations of factors, but writing as little code as possible to cover as many planes as possible is a far more challenging task indeed)
 
-# Questions or comments
+## Questions or comments
 
 Hit up the [github repository](https://github.com/Pomax/are-we-flying/issues) if you have any questions or comments, and let's talk!
