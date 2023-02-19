@@ -8,10 +8,10 @@ import {
 const { abs } = Math;
 import { degrees, constrain_map, get_compass_diff } from "./utils.js";
 
-let takeoff_heading = false;
-let lift_off = false;
-let level_out = false;
-let ease_elevator = false;
+let takeoffHeading = false;
+let liftoff = false;
+let levelOut = false;
+let easeElevator = false;
 
 // TODO stop using globals~
 
@@ -22,7 +22,7 @@ export async function autoTakeoff(autopilot, state) {
   const { TOTAL_WEIGHT: total_weight, DESIGN_SPEED_VS1: vs1 } = await api.get(`TOTAL_WEIGHT`, `DESIGN_SPEED_VS1`);
   const vs12 = vs1 * vs1;
 
-  if (!lift_off) {
+  if (!liftoff) {
     // We don't have a database of which plane needs how much flaps for
     // takeoff, so we just... don't set flaps. Use the whole runway,
     // that's what it's for.
@@ -65,16 +65,16 @@ export async function autoTakeoff(autopilot, state) {
   const heading = degrees(state.heading);
 
   // Record our initial heading so we can try to stick to that
-  if (!takeoff_heading) {
-    takeoff_heading = heading;
-    autopilot.set_target(HEADING_MODE, takeoff_heading);
+  if (!takeoffHeading) {
+    takeoffHeading = heading;
+    autopilot.set_target(HEADING_MODE, takeoffHeading);
   }
 
   // Do a poor job of auto-rudder:
   if (on_ground) {
     // const { RUDDER_POSITION: rudder } = await api.get(`RUDDER_POSITION`);
 
-    const diff = get_compass_diff(heading, takeoff_heading);
+    const diff = get_compass_diff(heading, takeoffHeading);
 
     // const factor = constrain_map(total_weight, 3000, 6500, 0.05, 0.3);
     const factor = constrain_map(vs12, 2500, 6000, 0.05, 0.3)
@@ -114,7 +114,7 @@ export async function autoTakeoff(autopilot, state) {
 
     if (!on_ground || current_speed > rotate_speed) {
       console.log(
-        `rotate. on ground: ${on_ground}, lift off: ${lift_off}, level out: ${level_out}, vs: ${vs}`
+        `rotate. on ground: ${on_ground}, lift off: ${liftoff}, level out: ${levelOut}, vs: ${vs}`
       );
 
       const { ELEVATOR_POSITION: elevator } = await api.get(
@@ -122,22 +122,22 @@ export async function autoTakeoff(autopilot, state) {
       );
 
       // Ease stick back to neutral
-      if (level_out && abs(vs) < 100) {
+      if (levelOut && abs(vs) < 100) {
         if (elevator < 0.015) {
           autopilot.set_target(AUTO_TAKEOFF, false);
         } else {
           console.log(`(1) ease back, elevator = ${elevator}`);
-          const ease_back = ease_elevator / 20;
+          const ease_back = easeElevator / 20;
           api.set("ELEVATOR_POSITION", elevator - ease_back);
         }
-      } else if (lift_off && vs > 1000 && elevator > 0) {
+      } else if (liftoff && vs > 1000 && elevator > 0) {
         console.log(`(2) ease back, elevator = ${elevator}`);
         api.set("ELEVATOR_POSITION", elevator / 5);
       }
 
       // Pull back on the stick
-      else if (lift_off === false) {
-        lift_off = true;
+      else if (liftoff === false) {
+        liftoff = true;
         const pull_back = constrain_map(total_weight, 3000, 6500, 0.005, 0.5);
         console.log(`\nKICK: ${pull_back}\n`);
         api.set("ELEVATOR_POSITION", pull_back);
@@ -148,10 +148,10 @@ export async function autoTakeoff(autopilot, state) {
 
   // Hand off control to the "regular" autopilot once we have a safe enough positive rate.
   const limit = constrain_map(total_weight, 3000, 6500, 300, 1000);
-  if (!level_out && vs > limit) {
-    level_out = true;
-    ease_elevator = await api.get(`ELEVATOR_POSITION`);
-    ease_elevator = ease_elevator[`ELEVATOR_POSITION`];
+  if (!levelOut && vs > limit) {
+    levelOut = true;
+    easeElevator = await api.get(`ELEVATOR_POSITION`);
+    easeElevator = easeElevator[`ELEVATOR_POSITION`];
     // api.set('ELEVATOR_POSITION', 0)  // we want to restore this to zero later...
     api.set("RUDDER_POSITION", 0);
     api.set("FLAPS_HANDLE_INDEX:1", 0);
