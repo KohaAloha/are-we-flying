@@ -1,3 +1,6 @@
+from math import sin, asin, cos, acos, tan, atan, atan2, degrees, radians, sqrt
+
+
 def test(x: any) -> str: return 'bad' if x is None else 'good'
 
 
@@ -41,3 +44,44 @@ def get_compass_diff(current: float, target: float, direction: float = 1) -> flo
     if direction > 0:
         return result
     return 360 - target if target < 180 else target - 360
+
+
+def get_point_at_distance(lat1, lon1, d, heading, R=6371):
+    """
+    lat: initial latitude, in degrees
+    lon: initial longitude, in degrees
+    d: target distance from initial
+    heading: (true) heading in degrees
+    R: optional radius of sphere, defaults to mean radius of earth
+
+    Returns new lat/lon coordinate {d}km from initial, in degrees
+    """
+    lat1 = radians(lat1)
+    lon1 = radians(lon1)
+    a = radians(heading)
+    lat2 = asin(sin(lat1) * cos(d/R) + cos(lat1) * sin(d/R) * cos(a))
+    lon2 = lon1 + atan2(
+        sin(a) * sin(d/R) * cos(lat1),
+        cos(d/R) - sin(lat1) * sin(lat2)
+    )
+    return (degrees(lat2), degrees(lon2),)
+
+
+def get_distance_between_points(lat1, lon1, lat2, lon2, R=6371):
+    """
+    https://stackoverflow.com/a/365853/740553
+    """
+    lat1 = float(lat1)
+    lon1 = float(lon1)
+    lat2 = float(lat2)
+    lon2 = float(lon2)
+
+    dLat = radians(lat2 - lat1)
+    dLon = radians(lon2 - lon1)
+    lat1 = radians(lat1)
+    lat2 = radians(lat2)
+    a = sin(dLat/2) * sin(dLat/2) + sin(dLon/2) * \
+        sin(dLon/2) * cos(lat1) * cos(lat2)
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    return R * c
+

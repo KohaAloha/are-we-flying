@@ -1,5 +1,5 @@
-import { rad } from "./utils.js";
-const { cos, sin } = Math;
+import { deg, rad } from "./utils.js";
+const { atan2, cos, sin, round } = Math;
 
 const content = await fetch("autopilot.html").then((res) => res.text());
 const autopilot = document.getElementById(`autopilot`);
@@ -7,11 +7,14 @@ autopilot.innerHTML = content;
 
 const autopilotURL = `http://localhost:8080/autopilot`;
 
+
 export class Autopilot {
-  constructor() {
+  constructor(owner) {
+    this.owner = owner;
     const ap = document.querySelector(`#autopilot`);
     this.acrobatic = ap.querySelector(`button.acrobatic`);
     this.master = ap.querySelector(`button.ap`);
+    this.takeoff = ap.querySelector(`button.ato`);
     this.altitude = ap.querySelector(`input.altitude`);
     this.heading = ap.querySelector(`input.heading`);
     this.vsh = ap.querySelector(`button.vsh`);
@@ -43,6 +46,7 @@ export class Autopilot {
     });
 
     this.master.addEventListener(`click`, () => this.toggleAutoPilot());
+    this.takeoff.addEventListener(`click`, () => this.takeOff());
     this.vsh.addEventListener(`click`, () => this.toggleVSH());
     this.alt.addEventListener(`click`, () => this.toggleALT());
     this.terrain.addEventListener(`click`, () => this.toggleTER());
@@ -110,6 +114,14 @@ export class Autopilot {
     this.master.classList.toggle(`active`);
   }
 
+  async takeOff() {
+    if (!this.master.classList.contains(`.active`)) {
+      this.master.click();
+    }
+    fetch(`${autopilotURL}?type=ATO`, { method: `POST` });
+    this.takeoff.classList.add(`active`);
+  }
+
   async toggleVSH() {
     await fetch(`${autopilotURL}?type=VSH`, { method: `POST` });
     this.vsh.classList.toggle(`active`);
@@ -131,9 +143,9 @@ export class Autopilot {
     console.log(`AP: Follow terrain: ${this.follow_terrain}`);
   }
 
-  async followTerrain(lat, long, heading) {
+  async followTerrain(lat, long, heading, altitude) {
     if (!this.follow_terrain) return;
-    updateElevationMap(lat, long, heading);
+    return updateElevationMap(lat, long, heading, altitude);
   }
 
   async setALT(altitude) {
@@ -183,35 +195,28 @@ export class Autopilot {
  *
  */
 
-async function updateElevationMap(lat, long, heading) {
+async function updateElevationMap(lat, long, heading, altitude) {
   // get lat/long information for the next 12NM,
   // e.g. 1/5th of a degree, on the current heading.
   let a = rad(heading);
-  const [lat2, long2] = [
-    lat + (0.2 * cos(a) - 0.2 * sin(a)),
-    long + (0.2 * sin(a) + 0.2 * cos(a)),
-  ];
-  const points = [{ latitude: lat, longitude: long }];
+  const [lat2, long2] = [lat + 0.2 * cos(a), long + 0.2 * sin(a)];
+  const points = [`${lat},${long}`];
   for (let s = 0.01, i = s; i < 1.0; i += s) {
-    points.push({
-      latitude: (1 - i) * lat + i * lat2,
-      longitude: (1 - i) * long + i * long2,
-    });
+    let x = (1 - i) * lat + i * lat2;
+    let y = (1 - i) * long + i * long2;
+    points.push(`${x},${y}`);
   }
-  points.push({ latitude: lat2, longitude: long2 });
+  points.push(`${lat2},${long2}`);
 
-  const response = await fetch(`https://api.open-elevation.com/api/v1/lookup`, {
-    method: `POST`,
-    body: JSON.stringify({
-      locations: points,
-    }),
-    headers: { "Content-Type": "application/json" },
-  }).then((r) => r.json());
+  const response = await fetch(
+    `http://localhost:9000?locations=${points.join(`|`)}`
+  ).then((r) => r.json());
 
-  makePath(response);
+  makePath(response, altitude);
+  return points;
 }
 
-function makePath(response) {
+async function makePath(response, altitude) {
   let minElevation = 50000;
   let maxElevation = -50000;
   response.results.forEach(({ elevation: e }) => {
@@ -220,12 +225,16 @@ function makePath(response) {
     if (e > maxElevation) maxElevation = e | 0;
   });
 
-  fetch(
-    `http://localhost:8080/autopilot?type=ALT&target=${maxElevation + 1000}`,
-    {
-      method: `POST`,
-    }
-  );
+  // should we change target altitudes?
+  const targetElevation = maxElevation + 500;
+  if (maxElevation > altitude || maxElevation < altitude - 25) {
+    fetch(
+      `http://localhost:8080/autopilot?type=ALT&target=${targetElevation}`,
+      {
+        method: `POST`,
+      }
+    );
+  }
 
   const elevations = response.results.map(
     (v, x) => `L ${x} ${v.elevation / 0.3048}`

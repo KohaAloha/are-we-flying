@@ -10,3 +10,6 @@ Glitch:
   - update "upload" to upload into a specific dir
   - add file dragging so we can trivially move files/dirs
 - fastify can't run on Node 10, so that's hilarious
+
+
+- Write a curve corrector. Value in, value out.

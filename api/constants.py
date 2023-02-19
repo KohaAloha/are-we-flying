@@ -1,6 +1,7 @@
 from math import pi
 
 MSFS_RADIAN = pi / 10
+AUTO_TAKEOFF = 'ATO'
 LEVEL_FLIGHT = 'LVL'
 HEADING_MODE = 'HDG'
 VERTICAL_SPEED_HOLD = 'VSH'

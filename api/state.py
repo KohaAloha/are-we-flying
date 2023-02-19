@@ -10,9 +10,15 @@ def printc(terms):
 @struct
 class State:
     # Basic flight data
+    on_ground = True
     altitude = 0
     speed = 0
-    heading = 0
+
+    # Basic nagivation data
+    latitude = 0
+    longitude = 0
+    heading = 0         # based on the magnetic compass
+    true_heading = 0    # based on GPS
 
     # Extended flight data
     bank_angle = 0
@@ -48,7 +54,7 @@ class State:
                 self.dV = (self.speed - prev_state.speed) / interval
                 self.dVS = (self.vertical_speed -
                             prev_state.vertical_speed) / interval
-        print(self)
+        # print(self)
 
     def __str__(self):
         return '\n'.join([
@@ -56,6 +62,8 @@ class State:
             ', '.join([
                 f'altitude: {"{:.5f}".format(self.altitude)}f',
                 f'speed: {"{:.5f}".format(self.speed)}kts',
+                f'latitude: {"{:.12f}".format(degrees(self.latitude))}°',
+                f'longitude: {"{:.12f}".format(degrees(self.longitude))}°',
                 f'heading: {"{:.5f}".format(degrees(self.heading))}°',
             ]),
             ', '.join([

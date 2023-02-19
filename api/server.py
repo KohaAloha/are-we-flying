@@ -17,6 +17,7 @@ class ProxyServer(BaseHTTPRequestHandler):
     def set_headers(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', '*')
         self.send_header('Cache-Control', 'no-cache')
         self.send_header('Content-type', 'application/json')
         self.end_headers()
@@ -49,6 +50,34 @@ class ProxyServer(BaseHTTPRequestHandler):
         else:
             data = json.dumps(dict()).encode('utf-8')
         self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self.set_headers()
+        self.wfile.write(b'okay')
+
+    def do_PUT(self):
+        # for adding waypoints
+        print(self.path)
+        query = urlparse(self.path).query
+        args = parse_qs(query)
+        if 'location' in args:
+            values = args['location'][0].split(',')
+            auto_pilot.add_waypoint(*values)
+        self.set_headers()
+        self.wfile.write(json.dumps(
+            auto_pilot.get_auto_pilot_parameters()).encode('utf-8'))
+
+    def do_DELETE(self):
+        # for removing waypoints
+        print(self.path)
+        query = urlparse(self.path).query
+        args = parse_qs(query)
+        if 'location' in args:
+            lat, long = args['location'][0].split(',')
+            auto_pilot.remove_waypoint(lat, long)
+        self.set_headers()
+        self.wfile.write(json.dumps(
+            auto_pilot.get_auto_pilot_parameters()).encode('utf-8'))
 
     def do_POST(self):
         print('[POST]: ', self.path)
@@ -93,19 +122,11 @@ class ProxyServer(BaseHTTPRequestHandler):
         return key_values
 
 
-def ensure_connection() -> None:
-    print(f'checking connection: {sim_connection.check_connection()}')
-
-
 def run():
     global auto_pilot, sim_connection
     sim_connection = APSimConnection()
     sim_connection.connect()
     auto_pilot = AutoPilot(sim_connection)
-
-    # "Ping" the sim connection every minute (which right now just
-    # builds a new SimConnect instead of doing something smart)
-    Timer(60, ensure_connection, [], {}).start()
 
     try:
         webServer = HTTPServer((host_name, server_port), ProxyServer)

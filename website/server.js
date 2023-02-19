@@ -25,8 +25,11 @@ app.use(
   })
 );
 
-app.post(`/api`, proxy(API_SERVER_URL));
 app.get(`/api`, proxy(API_SERVER_URL));
+app.put(`/api`, proxy(API_SERVER_URL));
+app.post(`/api`, proxy(API_SERVER_URL));
+app.delete(`/api`, proxy(API_SERVER_URL));
+
 app.get(`/`, (_req, res) => res.redirect(`/index.html`));
 
 app.listen(WEB_SERVER_PORT, () => {

@@ -1,8 +1,19 @@
-from math import degrees, radians, copysign, pi, sqrt
+from math import degrees, radians, copysign, pi, sqrt, cos, sin, atan2
 from utils import constrain, constrain_map, get_compass_diff
 from constants import HEADING_MODE, ACROBATIC
 
 # TODO: we need to speed up more, and slow down faster for the 310R, this heading mode is pretty slow...
+
+
+def get_heading_from_to(lat1, lon1, lat2, lon2):
+    lat1 = radians(float(lat1))
+    lon1 = radians(float(lon1))
+    lat2 = radians(float(lat2))
+    lon2 = radians(float(lon2))
+    dLon = lon2 - lon1
+    x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+    y = cos(lat2) * sin(dLon)
+    return degrees(atan2(y, x))
 
 
 def fly_level(auto_pilot, state):
@@ -24,9 +35,22 @@ def fly_level(auto_pilot, state):
     max_turn_rate = 3
 
     # Are we supposed to fly a specific compass heading?
+    if len(auto_pilot.waypoints) > 0:
+        waypoint = auto_pilot.waypoints[0]
+        lat = state.latitude
+        long = state.longitude
+        print(f"flying waypoint: {lat},{long}")
+        lat2 = waypoint.lat
+        long2 = waypoint.long
+        heading = get_heading_from_to(lat, long, lat2, long2)
+        heading = (heading - degrees(state.true_heading -
+                    state.heading) + 360) % 360
+        auto_pilot.set_target(HEADING_MODE, heading)
+
     flight_heading = auto_pilot.modes[HEADING_MODE]
     if flight_heading:
-        h_diff = get_compass_diff(degrees(state.heading), flight_heading)
+        heading = degrees(state.heading)
+        h_diff = get_compass_diff(heading, flight_heading)
         target_bank = constrain_map(h_diff, -30, 30, max_bank, -max_bank)
         max_turn_rate = constrain_map(abs(h_diff), 0, 10, 0.02, max_turn_rate)
 
@@ -56,14 +80,13 @@ def fly_acrobatic(auto_pilot, state):
     """
     Acrobatic flight is much snappier, but only really works if you're going fast enough.
     """
+    anchor = auto_pilot.anchor
 
     factor = -1 if auto_pilot.inverted else 1
     center = 0 if factor == 1 else pi
     bank = state.bank_angle
     bank = degrees(center + bank) if bank < 0 else degrees(bank - center)
-
-    anchor = auto_pilot.anchor
-    anchor.x += constrain_map(bank, -5, 5, -2, 2)
+    # anchor.x += constrain_map(bank, -5, 5, -2, 2)
 
     if auto_pilot.modes[HEADING_MODE]:
         heading = degrees(state.heading)
@@ -81,4 +104,7 @@ def fly_acrobatic(auto_pilot, state):
             if (hdiff < 0 and turn_rate > turn_limit) or (hdiff > 0 and turn_rate < -turn_limit):
                 anchor.x -= 1.1 * bump
 
-    auto_pilot.api.set('AILERON_TRIM_PCT', (anchor.x + bank)/180)
+    # auto_pilot.api.set('AILERON_TRIM_PCT', (anchor.x + bank)/180)
+    trim = state.aileron_trim - anchor.x
+    anchor.x += constrain_map(bank, -30, 30, -0.003, 0.003)
+    auto_pilot.api.set('AILERON_TRIM_PCT', trim + anchor.x)

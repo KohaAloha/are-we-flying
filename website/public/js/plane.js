@@ -10,20 +10,15 @@ import { Questions } from "./questions.js";
 import { getAirplaneSrc } from "./airplane-src.js";
 import { MapMarker } from "./map-marker.js";
 import { setupGraph } from "./svg-graph.js";
+import { FlightModel } from "./flight-model.js";
 
 let L; // leaflet
-const { abs, cos, sin, sqrt, max, PI: π } = Math;
+const { abs, atan2, cos, sin, sqrt, max, PI: π, round } = Math;
+const TAU = 2*π;
 let paused = false;
 let graph;
 
-const SIM_PROPS = [
-  "CAMERA_STATE",
-  "CRASH_FLAG",
-  "CRASH_SEQUENCE",
-  "FLIGHT_RESET",
-  "SIM_PAUSED",
-  "SIM_RUNNING",
-];
+const SIM_PROPS = ["CAMERA_STATE", "CRASH_FLAG", "CRASH_SEQUENCE"];
 
 const MODEL_PROPS = ["TITLE", "STATIC_CG_TO_GROUND"];
 
@@ -59,14 +54,15 @@ let centerBtn;
 
 export class Plane {
   constructor(map, location, heading) {
+    console.log(`building plane`);
     this.init(map, location, heading);
     this.monitor = new Monitor((data) => this.update(data));
-    this.autopilot = new Autopilot();
+    this.autopilot = new Autopilot(this);
     const [lat, long] = (this.lastPos = Duncan);
     this.lat = lat;
     this.long = long;
     this.state = {};
-    this.running = 0;
+    this.running = 3;
     this.lastUpdate = 0;
     this.waitForInGame();
     centerBtn = document.getElementById(`center-map`);
@@ -90,9 +86,41 @@ export class Plane {
       }),
     };
     this.map = map;
+
+    map.on(`click`, (e) => this.handleMapClick(e));
+
     this.marker = L.marker(location, props).addTo(map);
     this.planeIcon = document.querySelector(`#plane-icon`);
     this.startNewTrail(location);
+  }
+
+  async addMarker(lat, lng) {
+    var icon = new L.Icon.Default();
+    icon.options.iconAnchor = [20, 40];
+    icon.options.iconSize = [40, 40];
+    icon.options.shadowSize = [0, 0];
+    // manage these better
+    const waypoint = L.marker({ lat, lng }, { icon }).addTo(this.map);
+    waypoint.on(`click`, ({ latlng }) => {
+      this.handleWaypointClick(waypoint, latlng);
+    });
+  }
+
+  async handleMapClick({ latlng }) {
+    const { lat, lng } = latlng;
+    this.addMarker(lat, lng);
+    const { waypoints } = await (
+      await fetch(`/api/?location=${lat},${lng}`, { method: `PUT` })
+    ).json();
+    console.log(waypoints);
+  }
+
+  async handleWaypointClick(waypoint, { lat, lng }) {
+    const { waypoints } = await (
+      await fetch(`/api/?location=${lat},${lng}`, { method: `DELETE` })
+    ).json();
+    waypoint.remove();
+    console.log(waypoints);
   }
 
   startNewTrail(location) {
@@ -102,7 +130,7 @@ export class Plane {
   update(data = {}) {
     if (data === null) return;
     this.checkForReset(data);
-    this.checkForSimRunning(data);
+    // this.checkForSimRunning(data);
     if (this.running < 3) return;
     this.setState(data);
     this.setEngine(data);
@@ -110,22 +138,20 @@ export class Plane {
   }
 
   async waitForInGame() {
-    waitFor(async () => {
-      try {
-        const { SIM_RUNNING: value } = await getAPI(`SIM_RUNNING`);
-        return (value | 0) === 3;
-      } catch (e) {
-        return 0;
-      }
-    }).then(() => {
-      Questions.inGame(true);
-      this.waitForModel();
-    });
+    console.log(`wait for in-game`);
+    Questions.resetPlayer();
+    Questions.inGame(true);
+    this.waitForModel();
   }
 
   async waitForModel() {
+    console.log(`wait for model`);
     this.monitor.registerAll(SIM_PROPS, 1000);
     this.monitor.registerAll(MODEL_PROPS, 5000);
+
+    // TODO: switch to flight model class for plane data?
+    const model = new FlightModel();
+    model.bootstrap();
   }
 
   checkForReset(data) {
@@ -138,40 +164,6 @@ export class Plane {
     ) {
       this.lastReset = reset;
       this.startNewTrail();
-    }
-  }
-
-  checkForSimRunning(data) {
-    const {
-      SIM_RUNNING: running,
-      CRASH_FLAG: crashed,
-      CRASH_SEQUENCE: reason,
-    } = data;
-
-    if (running === undefined) return;
-
-    this.running = running;
-    if (running < 3) {
-      if (data.SIM_PAUSED) {
-        // console.log(`player is paused in-sim`)
-        paused = true;
-        this.planeIcon?.classList.add(`paused`);
-      } else {
-        // console.log(`player not interacting in-sim`)
-        paused = false;
-        this.waitForInGame();
-        Questions.resetPlayer();
-      }
-    }
-    if (running >= 3) {
-      paused = false;
-      this.planeIcon?.classList.remove(`paused`);
-      this.planeIcon?.classList.remove(`dead`);
-    }
-
-    if (crashed || reason) {
-      Questions.planeCrashed(true);
-      this.planeIcon?.classList.add(`dead`);
     }
   }
 
@@ -253,7 +245,7 @@ export class Plane {
         {
           labels: `heading, htarget`,
           limit: 180,
-        },
+        }
       );
       graph.start();
     }
@@ -264,8 +256,8 @@ export class Plane {
     if (data.PLANE_LATITUDE === undefined) return;
 
     this.vector = {
-      lat: data.PLANE_LATITUDE,
-      long: data.PLANE_LONGITUDE,
+      lat: 360 * data.PLANE_LATITUDE / TAU,
+      long: 360 * data.PLANE_LONGITUDE / TAU,
       speed: data.AIRSPEED_TRUE,
       vspeed: data.VERTICAL_SPEED,
       alt: data.INDICATED_ALTITUDE,
@@ -309,6 +301,9 @@ export class Plane {
 
     if (lat === undefined || long === undefined) return;
 
+    document.getElementById(`lat`).textContent = lat.toFixed(5);
+    document.getElementById(`long`).textContent = long.toFixed(5);
+
     if (dist(this.lat, this.long, lat, long) > 0.02) {
       this.startNewTrail([lat, long]);
     }
@@ -319,6 +314,7 @@ export class Plane {
 
     try {
       this.trail.addLatLng(pair);
+      points.shift();
     } catch (e) {
       // console.log(`what is triggering this error?`, e);
       // console.log(pair, typeof lat, typeof long);
@@ -369,7 +365,8 @@ export class Plane {
       graph.addValue(`atarget`, target);
     }
 
-    this.autopilot.followTerrain(lat, long, trueHeading);
     this.lastUpdate = now;
+
+    this.autopilot.followTerrain(lat, long, trueHeading, alt);
   }
 }
