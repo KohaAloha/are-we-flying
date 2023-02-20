@@ -31,7 +31,7 @@ function failWithoutAPI(_req, res, next) {
 
 // middlerware (well, final-ware) for sending the AP state as JSON
 function sendAPstate(req, res) {
-  res.status(200).json(autopilot.get_auto_pilot_parameters());
+  res.status(200).json(autopilot.getAutoPilotParameters());
 }
 
 // =========== ROUTES =============
@@ -78,9 +78,7 @@ app.post(`/api`, failWithoutAPI, async (req, res) => {
 
 // Autopilot routes
 
-app.get(`/autopilot`, async (req, res) => {
-  res.status(200).json(autopilot.get_auto_pilot_parameters());
-});
+app.get(`/autopilot`, sendAPstate);
 
 app.post(
   `/autopilot`,
@@ -98,12 +96,12 @@ app.post(
             : target === `true`
             ? true
             : parseFloat(target);
-        autopilot.set_target(type, value);
+        autopilot.setTarget(type, value);
       } else {
         autopilot.toggle(type);
       }
     } else {
-      autopilot.toggle_auto_pilot();
+      autopilot.toggleAutoPilot();
     }
     next();
   },
@@ -118,7 +116,7 @@ app.put(
     const { location } = req.query;
     if (location) {
       const args = location.split(`,`);
-      autopilot.add_waypoint(...args);
+      autopilot.addWaypoint(...args);
     }
     next();
   },
@@ -131,7 +129,7 @@ app.delete(
     const { location } = req.query;
     if (location) {
       const args = location.split(`,`);
-      autopilot.remove_waypoint(...args);
+      autopilot.removeWaypoint(...args);
     }
     next();
   },

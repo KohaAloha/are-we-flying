@@ -1,4 +1,4 @@
-import { get_distance_between_points } from "./utils.js";
+import { getDistanceBetweenPoints } from "./utils.js";
 
 export class WayPoints {
   constructor() {
@@ -28,7 +28,7 @@ export class WayPoints {
     if (this.waypoints.length === 0) return;
 
     const w = this.waypoints[0];
-    if (get_distance_between_points(lat, long, w.lat, w.long) < 0.2) {
+    if (getDistanceBetweenPoints(lat, long, w.lat, w.long) < 0.2) {
       this.waypoints.shift();
     }
   }

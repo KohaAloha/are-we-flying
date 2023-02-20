@@ -23,7 +23,7 @@ export function constrain(v, m, M) {
   return v > M ? M : v < m ? m : v;
 }
 
-export function constrain_map(v, ds, de, ts, te, lm = false, LM = false) {
+export function constrainMap(v, ds, de, ts, te, lm = false, LM = false) {
   const val = constrain(map(v, ds, de, ts, te), ts, te);
   if (lm === false || LM === false) return val;
   if (val < lm) return val;
@@ -34,7 +34,7 @@ export function constrain_map(v, ds, de, ts, te, lm = false, LM = false) {
   return val;
 }
 
-export function get_compass_diff(current, target, direction = 1) {
+export function getCompassDiff(current, target, direction = 1) {
   const diff = current > 180 ? current - 360 : current;
   target = target - diff;
   const result = target < 180 ? target : target - 360;
@@ -42,7 +42,7 @@ export function get_compass_diff(current, target, direction = 1) {
   return target < 180 ? 360 - target : target - 360;
 }
 
-export function get_point_at_distance(lat1, long1, d, heading, R = 6371) {
+export function getPointAtDistance(lat1, long1, d, heading, R = 6371) {
   ```
     lat: initial latitude, in degrees
     lon: initial longitude, in degrees
@@ -63,7 +63,7 @@ export function get_point_at_distance(lat1, long1, d, heading, R = 6371) {
   return { lat: degrees(lat2), long: degrees(long2) };
 }
 
-export function get_distance_between_points(
+export function getDistanceBetweenPoints(
   lat1,
   long1,
   lat2,
@@ -90,7 +90,7 @@ export function get_distance_between_points(
   return R * c;
 }
 
-export function get_heading_from_to(lat1, long1, lat2, long2) {
+export function getHeadingFromTo(lat1, long1, lat2, long2) {
   lat1 = radians(parseFloat(lat1));
   long1 = radians(parseFloat(long1));
   lat2 = radians(parseFloat(lat2));

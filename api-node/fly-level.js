@@ -2,26 +2,26 @@ const { abs } = Math;
 import {
   degrees,
   radians,
-  constrain_map,
-  get_compass_diff,
-  get_heading_from_to,
+  constrainMap,
+  getCompassDiff,
+  getHeadingFromTo,
 } from "./utils.js";
 import { HEADING_MODE } from "./constants.js";
 
 export async function flyLevel(autopilot, state) {
   const { anchor } = autopilot;
 
-  let bank = degrees(state.bank_angle);
-  let max_bank = constrain_map(state.speed, 50, 200, 10, 30);
+  let bank = degrees(state.bankAngle);
+  let maxBank = constrainMap(state.speed, 50, 200, 10, 30);
 
   let dBank = state.dBank;
-  let max_dBank = radians(1);
+  let maxdBank = radians(1);
 
-  let step = constrain_map(state.speed, 50, 150, radians(1), radians(2));
-  let target_bank = 0;
+  let step = constrainMap(state.speed, 50, 150, radians(1), radians(2));
+  let targetBank = 0;
 
-  let turn_rate = degrees(state.turn_rate);
-  let max_turn_rate = 3;
+  let turnRate = degrees(state.turnRate);
+  let maxturnRate = 3;
 
   let heading = degrees(state.heading);
 
@@ -33,44 +33,44 @@ export async function flyLevel(autopilot, state) {
     console.log(`flying waypoint: ${lat},${long}`);
     lat2 = waypoint.lat;
     long2 = waypoint.long;
-    heading = get_heading_from_to(lat, long, lat2, long2);
+    heading = getHeadingFromTo(lat, long, lat2, long2);
     heading =
-      (heading - degrees(state.true_heading - state.heading) + 360) % 360;
-    autopilot.set_target(HEADING_MODE, heading);
+      (heading - degrees(state.trueHeading - state.heading) + 360) % 360;
+    autopilot.setTarget(HEADING_MODE, heading);
   }
 
-  let flight_heading = autopilot.modes[HEADING_MODE];
-  if (flight_heading) {
-    const h_diff = get_compass_diff(heading, flight_heading);
-    target_bank = constrain_map(h_diff, -30, 30, max_bank, -max_bank);
-    max_turn_rate = constrain_map(abs(h_diff), 0, 10, 0.02, max_turn_rate);
+  let flightHeading = autopilot.modes[HEADING_MODE];
+  if (flightHeading) {
+    const h_diff = getCompassDiff(heading, flightHeading);
+    targetBank = constrainMap(h_diff, -30, 30, maxBank, -maxBank);
+    maxturnRate = constrainMap(abs(h_diff), 0, 10, 0.02, maxturnRate);
   }
 
   // Now then: we want a diff==0 and dBank==0, so let's minimize both!
 
   // First off, what is our banking difference?
-  let diff = target_bank - bank;
+  let diff = targetBank - bank;
 
   // correct for non-zero diff first:
-  anchor.x += -constrain_map(diff, -max_bank, max_bank, -step, step);
+  anchor.x += -constrainMap(diff, -maxBank, maxBank, -step, step);
 
   // then correct for non-zero dBank
-  anchor.x += constrain_map(
+  anchor.x += constrainMap(
     dBank,
-    -max_dBank,
-    max_dBank,
+    -maxdBank,
+    maxdBank,
     -0.5 * step,
     0.5 * step
   );
 
   // and then if we're turning, make sure we're not actually turning too fast
-  if (turn_rate < -max_turn_rate || turn_rate > max_turn_rate) {
+  if (turnRate < -maxturnRate || turnRate > maxturnRate) {
     const overshoot =
-      turn_rate > 0 ? turn_rate - max_turn_rate : turn_rate + max_turn_rate;
-    const nudge = constrain_map(
+      turnRate > 0 ? turnRate - maxturnRate : turnRate + maxturnRate;
+    const nudge = constrainMap(
       overshoot,
-      -max_turn_rate,
-      max_turn_rate,
+      -maxturnRate,
+      maxturnRate,
       -step / 5,
       step / 5
     );

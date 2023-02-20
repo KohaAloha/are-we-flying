@@ -33,7 +33,7 @@ export class AutoPilot {
   bootstrap() {
     // Set up values we need during the autopilot main loop
     this.paused = false;
-    this.prev_state = new State();
+    this.prevState = new State();
     this.anchor = { x: 0, y: 0, z: 0 };
     this.acrobatic = false;
     this.inverted = false;
@@ -44,25 +44,25 @@ export class AutoPilot {
     this.paused = value;
   }
 
-  toggle_auto_pilot() {
+  toggleAutoPilot() {
     console.log(`toggling autopilot`);
     this.auto_pilot_enabled = !this.auto_pilot_enabled;
     if (this.auto_pilot_enabled) {
-      this.prev_call_time = Date.now();
+      this.prev_callTime = Date.now();
       this.run();
     }
   }
 
-  add_waypoint(lat, long, alt = undefined) {
+  addWaypoint(lat, long, alt = undefined) {
     this.waypoints.add(lat, long, alt);
   }
 
-  remove_waypoint(lat, long) {
+  removeWaypoint(lat, long) {
     this.waypoints.remove(lat, long);
   }
 
   run() {
-    setTimeout(() => this.run_autopilot(), this.AP_INTERVAL);
+    setTimeout(() => this.runAutopilot(), this.AP_INTERVAL);
   }
 
   async get(...names) {
@@ -73,7 +73,7 @@ export class AutoPilot {
     this.api.set(name, value);
   }
 
-  get_auto_pilot_parameters() {
+  getAutoPilotParameters() {
     const state = {
       AP_STATE: this.auto_pilot_enabled,
       waypoints: this.waypoints,
@@ -87,10 +87,10 @@ export class AutoPilot {
   toggle(type) {
     const { modes } = this;
     if (modes[type] === undefined) return;
-    this.set_target(type, !modes[type]);
+    this.setTarget(type, !modes[type]);
   }
 
-  set_target(type, value) {
+  setTarget(type, value) {
     const { modes } = this;
     if (modes[type] === undefined) return;
     modes[type] = value;
@@ -130,7 +130,7 @@ export class AutoPilot {
     }
   }
 
-  async run_autopilot() {
+  async runAutopilot() {
     // This is our master autopilot entry point,
     // grabbing the current state from MSFS, and
     // forwarding it to the relevant AP handlers.
@@ -166,7 +166,7 @@ export class AutoPilot {
       `ELEVATOR_TRIM_DOWN_LIMIT`
     );
 
-    const state = new State(data, this.prev_state);
+    const state = new State(data, this.prevState);
 
     // If we're close a waypoint, remove it.
     this.waypoints.invalidate(state.latitude, state.longitude);
@@ -186,6 +186,6 @@ export class AutoPilot {
       verticalHold(this, state);
     }
 
-    this.prev_state = state;
+    this.prevState = state;
   }
 }
